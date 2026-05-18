@@ -212,7 +212,9 @@ func (r *CompanyRepo) IncrementQuotaWithLock(ctx context.Context, id string, amo
 
 	_, err = tx.ExecContext(ctx, query, id, amount, time.Now())
 	if err != nil {
-		tx.Rollback()
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("failed to increment quota with lock: %w (rollback: %v)", err, rbErr)
+		}
 		return fmt.Errorf("failed to increment quota with lock: %w", err)
 	}
 

@@ -62,7 +62,9 @@ func (h *WhatsAppHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(challenge))
+	if _, err := w.Write([]byte(challenge)); err != nil {
+		slog.Error("failed to write webhook challenge response", "error", err)
+	}
 }
 
 func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
@@ -161,12 +163,16 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 			return
 		}
 	} else {
-		h.convRepo.IncrementUnread(ctx, conv.ID)
+		if err := h.convRepo.IncrementUnread(ctx, conv.ID); err != nil {
+			slog.Error("failed to increment unread count", "error", err, "conversation_id", conv.ID)
+		}
 		conv.UnreadCount++
 		now := time.Now().UTC()
 		conv.LastCustomerMessageAt = &now
 		conv.Is24hWindowActive = true
-		h.convRepo.Update(ctx, conv)
+		if err := h.convRepo.Update(ctx, conv); err != nil {
+			slog.Error("failed to update conversation", "error", err, "conversation_id", conv.ID)
+		}
 	}
 
 	messageType := parseMessageType(msg.Type)
@@ -223,35 +229,38 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 func (h *WhatsAppHandler) processStatus(ctx context.Context, status WhatsAppStatus) {
 	msg, err := h.msgRepo.GetByMessageID(ctx, status.ID)
 	if err != nil {
-		slog.Error("failed to find message by wa_id", "error", err, "wa_id", status.Status)
+		slog.Error("failed to find message by message_id", "error", err, "message_id", status.ID, "new_status", status.Status)
 		return
 	}
 
 	oldStatus := msg.Status
+	now := time.Now().UTC()
 
 	switch status.Status {
 	case "sent":
-		msg.Status = string(models.MessageStatusSent)
-		now := time.Now().UTC()
-		msg.SentAt = &now
-	case "delivered":
-		msg.Status = string(models.MessageStatusDelivered)
-		now := time.Now().UTC()
-		msg.DeliveredAt = &now
-	case "read":
-		msg.Status = string(models.MessageStatusRead)
-		now := time.Now().UTC()
-		msg.ReadAt = &now
-	case "failed":
-		msg.Status = string(models.MessageStatusFailed)
-		if len(status.Errors) > 0 {
-			msg.ErrorMessage = status.Errors[0].Message
+		if err := h.msgRepo.UpdateDeliveryStatus(ctx, msg.ID, "sent", now); err != nil {
+			slog.Error("failed to update sent status", "error", err)
+			return
 		}
-	}
-
-	if err := h.msgRepo.UpdateStatus(ctx, msg.ID, msg.Status); err != nil {
-		slog.Error("failed to update message status", "error", err)
-		return
+	case "delivered":
+		if err := h.msgRepo.UpdateDeliveryStatus(ctx, msg.ID, "delivered", now); err != nil {
+			slog.Error("failed to update delivered status", "error", err)
+			return
+		}
+	case "read":
+		if err := h.msgRepo.UpdateDeliveryStatus(ctx, msg.ID, "read", now); err != nil {
+			slog.Error("failed to update read status", "error", err)
+			return
+		}
+	case "failed":
+		errMsg := ""
+		if len(status.Errors) > 0 {
+			errMsg = status.Errors[0].Message
+		}
+		if err := h.msgRepo.SetFailed(ctx, msg.ID, errMsg); err != nil {
+			slog.Error("failed to update failed status", "error", err)
+			return
+		}
 	}
 
 	if h.wsHub != nil {
@@ -264,7 +273,7 @@ func (h *WhatsAppHandler) processStatus(ctx context.Context, status WhatsAppStat
 		}
 	}
 
-	slog.Info("updated message status", "message_id", msg.ID, "old_status", oldStatus, "new_status", msg.Status)
+	slog.Info("updated message status", "message_id", msg.ID, "old_status", oldStatus, "new_status", status.Status)
 }
 
 func (h *WhatsAppHandler) resolveCompanyID(ctx context.Context, phoneNumberID string) (string, error) {

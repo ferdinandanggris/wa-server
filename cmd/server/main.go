@@ -15,19 +15,8 @@ import (
 	"github.com/wa-server/internal/config"
 	"github.com/wa-server/internal/queue"
 	"github.com/wa-server/internal/repository"
+	"github.com/wa-server/internal/whatsapp"
 )
-
-type mockWhatsAppClient struct{}
-
-func (m *mockWhatsAppClient) SendMessage(ctx context.Context, phoneNumberID, to, messageType, content string, mediaURL string) (string, error) {
-	slog.Info("mock send message", "phoneNumberID", phoneNumberID, "to", to, "type", messageType, "content", content)
-	return "mock_message_id_" + fmt.Sprint(time.Now().Unix()), nil
-}
-
-func (m *mockWhatsAppClient) SendTemplateMessage(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error) {
-	slog.Info("mock send template", "phoneNumberID", phoneNumberID, "to", to, "templateID", templateID, "params", params)
-	return "mock_message_id_" + fmt.Sprint(time.Now().Unix()), nil
-}
 
 func main() {
 	slog.Info("starting WhatsApp Gateway server...")
@@ -81,9 +70,10 @@ func main() {
 		wsHub,
 	)
 
-	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
+	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
+	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default", waClient, contactRepo)
 
-	workerPool := queue.NewWorkerPool(rmq, &mockWhatsAppClient{}, msgRepo, 5)
+	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, 5)
 	if err := workerPool.Start(); err != nil {
 		slog.Error("failed to start worker pool", "error", err)
 		os.Exit(1)
@@ -109,7 +99,9 @@ func main() {
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		if _, err := w.Write([]byte("OK")); err != nil {
+			slog.Error("failed to write health response", "error", err)
+		}
 	})
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

@@ -115,13 +115,15 @@ func (r *RabbitMQ) setup() error {
 	return nil
 }
 
-func (r *RabbitMQ) Publish(ctx context.Context, queueName string, body []byte) error {
+// Publish sends a message to the exchange with the specified routing key.
+// The routing key must match a queue binding for the message to be delivered.
+func (r *RabbitMQ) Publish(ctx context.Context, routingKey string, body []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	err := r.channel.PublishWithContext(ctx,
 		ExchangeWhatsApp,
-		queueName,
+		routingKey,
 		false,
 		false,
 		amqp.Publishing{
@@ -135,7 +137,7 @@ func (r *RabbitMQ) Publish(ctx context.Context, queueName string, body []byte) e
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
 
-	slog.Debug("published message", "queue", queueName, "size", len(body))
+	slog.Debug("published message", "routing_key", routingKey, "size", len(body))
 	return nil
 }
 

@@ -260,3 +260,20 @@ func (r *ContactRepository) ListByCompany(ctx context.Context, companyID string,
 
 	return contacts, rows.Err()
 }
+
+func (r *ContactRepository) GetPhoneByConversationID(ctx context.Context, conversationID string) (string, error) {
+	query := `
+		SELECT c.phone_number 
+		FROM contacts c
+		JOIN conversations conv ON conv.contact_id = c.id
+		WHERE conv.id = $1::uuid
+	`
+
+	var phone string
+	err := r.db.QueryRowContext(ctx, query, conversationID).Scan(&phone)
+	if err != nil {
+		return "", err
+	}
+
+	return phone, nil
+}

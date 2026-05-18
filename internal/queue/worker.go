@@ -6,35 +6,36 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/wa-server/internal/config"
 	"github.com/wa-server/internal/models"
+	"github.com/wa-server/internal/repository"
 )
 
 type WhatsAppClient interface {
-	SendMessage(ctx context.Context, phoneNumberID, to, messageType, content string, mediaURL string) (string, error)
-	SendTemplateMessage(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error)
+	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
+	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
 }
 
 type WorkerPool struct {
-	rmq       *RabbitMQ
-	whatsapp  WhatsAppClient
-	msgRepo   models.MessageRepository
-	companyID string
-	workers   int
-	wg        sync.WaitGroup
-	ctx       context.Context
-	cancel    context.CancelFunc
+	rmq         *RabbitMQ
+	whatsapp    WhatsAppClient
+	msgRepo     models.MessageRepository
+	contactRepo *repository.ContactRepository
+	workers     int
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
-func NewWorkerPool(rmq *RabbitMQ, whatsapp WhatsAppClient, msgRepo models.MessageRepository, workers int) *WorkerPool {
+func NewWorkerPool(rmq *RabbitMQ, whatsapp WhatsAppClient, msgRepo models.MessageRepository, contactRepo *repository.ContactRepository, workers int) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
-		rmq:      rmq,
-		whatsapp: whatsapp,
-		msgRepo:  msgRepo,
-		workers:  workers,
-		ctx:      ctx,
-		cancel:   cancel,
+		rmq:         rmq,
+		whatsapp:    whatsapp,
+		msgRepo:     msgRepo,
+		contactRepo: contactRepo,
+		workers:     workers,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -54,7 +55,14 @@ func (wp *WorkerPool) Stop() {
 }
 
 func (wp *WorkerPool) worker(id int) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("worker panic recovered", "worker_id", id, "panic", r)
+		}
+	}()
 	defer wp.wg.Done()
+
+	slog.Info("worker starting", "worker_id", id)
 
 	msgs, err := wp.rmq.Consume(wp.ctx, QueueOutbound)
 	if err != nil {
@@ -62,7 +70,7 @@ func (wp *WorkerPool) worker(id int) {
 		return
 	}
 
-	slog.Info("worker started", "worker_id", id)
+	slog.Info("worker started and consuming", "worker_id", id)
 
 	for {
 		select {
@@ -74,13 +82,24 @@ func (wp *WorkerPool) worker(id int) {
 				slog.Info("channel closed, worker exiting", "worker_id", id)
 				return
 			}
+			slog.Info("worker got message", "worker_id", id, "body_len", len(msg.Body))
 			wp.processMessage(wp.ctx, msg.Body)
-			msg.Ack(false)
+			if err := msg.Ack(false); err != nil {
+				slog.Error("failed to ack message", "error", err, "worker_id", id)
+			}
 		}
 	}
 }
 
 func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("processMessage panic", "panic", r)
+		}
+	}()
+
+	slog.Info("worker received message", "body_length", len(body))
+
 	var message struct {
 		ID             string `json:"id"`
 		ConversationID string `json:"conversation_id"`
@@ -96,24 +115,30 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		return
 	}
 
-	slog.Info("processing outbound message", "message_id", message.ID)
+	slog.Info("processing outbound message", "message_id", message.ID, "conversation_id", message.ConversationID)
 
-	phoneNumberID := "default"   // TODO: Resolve from conversation/company
-	to := message.ConversationID // TODO: Resolve to phone number
+	phone, err := wp.contactRepo.GetPhoneByConversationID(ctx, message.ConversationID)
+	if err != nil {
+		slog.Error("failed to get phone number", "error", err, "conversation_id", message.ConversationID)
+		wp.failMessage(ctx, message.ID, "phone number not found")
+		return
+	}
+
+	slog.Info("resolved phone number", "phone", phone)
 
 	var waMessageID string
-	var err error
+	var sendErr error
 
 	if message.MessageType == "template" {
 		params := parseTemplateParams(message.TemplateParams)
-		waMessageID, err = wp.whatsapp.SendTemplateMessage(ctx, phoneNumberID, to, message.TemplateID, params)
+		waMessageID, sendErr = wp.whatsapp.SendTemplateMessage(ctx, phone, message.TemplateID, params)
 	} else {
-		waMessageID, err = wp.whatsapp.SendMessage(ctx, phoneNumberID, to, message.MessageType, message.Content, message.MediaURL)
+		waMessageID, sendErr = wp.whatsapp.SendMessage(ctx, phone, message.MessageType, message.Content, message.MediaURL)
 	}
 
-	if err != nil {
-		slog.Error("failed to send message to WhatsApp", "error", err, "message_id", message.ID)
-		wp.failMessage(ctx, message.ID, err.Error())
+	if sendErr != nil {
+		slog.Error("failed to send message to WhatsApp", "error", sendErr, "message_id", message.ID)
+		wp.failMessage(ctx, message.ID, sendErr.Error())
 		return
 	}
 
@@ -128,8 +153,8 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 func (wp *WorkerPool) failMessage(ctx context.Context, messageID, errMsg string) {
 	if wp.msgRepo != nil {
-		if err := wp.msgRepo.UpdateStatus(ctx, messageID, string(models.MessageStatusFailed)); err != nil {
-			slog.Error("failed to update message status", "error", err)
+		if err := wp.msgRepo.SetFailed(ctx, messageID, errMsg); err != nil {
+			slog.Error("failed to set message status to failed", "error", err)
 		}
 	}
 }
@@ -141,22 +166,4 @@ func parseTemplateParams(params string) map[string]string {
 	var result map[string]string
 	_ = json.Unmarshal([]byte(params), &result)
 	return result
-}
-
-type Config struct {
-	RabbitMQ *config.RabbitMQConfig
-	WhatsApp *config.WhatsAppConfig
-	Workers  int `envconfig:"WORKER_POOL_WORKERS" default:"5"`
-}
-
-type OutboundMessage struct {
-	ID             string            `json:"id"`
-	ConversationID string            `json:"conversation_id"`
-	CompanyID      string            `json:"company_id"`
-	To             string            `json:"to"`
-	MessageType    string            `json:"message_type"`
-	Content        string            `json:"content"`
-	MediaURL       string            `json:"media_url,omitempty"`
-	TemplateID     string            `json:"template_id,omitempty"`
-	TemplateParams map[string]string `json:"template_params,omitempty"`
 }

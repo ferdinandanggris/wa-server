@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -9,19 +10,28 @@ import (
 
 	"github.com/wa-server/internal/models"
 	"github.com/wa-server/internal/queue"
+	"github.com/wa-server/internal/repository"
 )
 
 type OutboundHandler struct {
-	msgRepo   models.MessageRepository
-	queuePub  *queue.Publisher
-	companyID string
+	msgRepo     models.MessageRepository
+	queuePub    *queue.Publisher
+	companyID   string
+	waClient    WhatsAppClient
+	contactRepo *repository.ContactRepository
 }
 
-func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string) *OutboundHandler {
+type WhatsAppClient interface {
+	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
+}
+
+func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string, waClient WhatsAppClient, contactRepo *repository.ContactRepository) *OutboundHandler {
 	return &OutboundHandler{
-		msgRepo:   msgRepo,
-		queuePub:  queuePub,
-		companyID: companyID,
+		msgRepo:     msgRepo,
+		queuePub:    queuePub,
+		companyID:   companyID,
+		waClient:    waClient,
+		contactRepo: contactRepo,
 	}
 }
 
@@ -98,10 +108,37 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Direct WhatsApp call for immediate send (bypass worker for testing)
+	if h.waClient != nil && h.contactRepo != nil {
+		phone, err := h.contactRepo.GetPhoneByConversationID(r.Context(), conversationID)
+		if err != nil {
+			slog.Warn("failed to get phone for direct send", "error", err)
+		} else {
+			slog.Info("sending directly to WhatsApp", "phone", phone)
+			waMsgID, sendErr := h.waClient.SendMessage(r.Context(), phone, messageType, req.Content, req.MediaURL)
+			if sendErr != nil {
+				slog.Error("direct WhatsApp send failed", "error", sendErr)
+			} else {
+				slog.Info("direct WhatsApp send success", "wa_message_id", waMsgID)
+				msg.Status = string(models.MessageStatusSent)
+				msg.MessageID = waMsgID
+				if err := h.msgRepo.UpdateStatus(r.Context(), msg.ID, msg.Status); err != nil {
+					slog.Error("failed to update message status", "error", err)
+				}
+				if err := h.msgRepo.UpdateWAMessageID(r.Context(), msg.ID, waMsgID); err != nil {
+					slog.Error("failed to update WA message ID", "error", err)
+				}
+			}
+		}
+	}
+
 	if h.queuePub != nil {
+		slog.Info("publishing message to queue", "message_id", msg.ID)
 		if err := h.queuePub.PublishOutbound(r.Context(), msg); err != nil {
 			slog.Error("failed to publish message to queue", "error", err)
 		}
+	} else {
+		slog.Warn("queuePub is nil, message not queued")
 	}
 
 	resp := SendMessageResponse{
@@ -111,7 +148,9 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("failed to encode response", "error", err)
+	}
 }
 
 func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +181,9 @@ func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messages)
+	if err := json.NewEncoder(w).Encode(messages); err != nil {
+		slog.Error("failed to encode messages", "error", err)
+	}
 }
 
 func (h *OutboundHandler) RegisterRoutes(mux *http.ServeMux) {

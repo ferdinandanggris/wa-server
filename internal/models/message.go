@@ -59,5 +59,7 @@ type MessageRepository interface {
 	GetByMessageID(ctx context.Context, messageID string) (*Message, error)
 	GetByConversationID(ctx context.Context, convID string, limit, offset int) ([]Message, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
+	UpdateDeliveryStatus(ctx context.Context, id, status string, timestamp time.Time) error
 	UpdateWAMessageID(ctx context.Context, id, waMessageID string) error
+	SetFailed(ctx context.Context, id, errMsg string) error
 }
