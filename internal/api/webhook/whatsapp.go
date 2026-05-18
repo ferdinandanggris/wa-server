@@ -110,6 +110,8 @@ func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
+const defaultCompanyID = "00000000-0000-0000-0000-000000000001"
+
 func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsAppMetadata, msg WhatsAppMessage) {
 	phoneNumber := extractPhone(msg.From)
 	waID := msg.From
@@ -118,7 +120,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 	if err != nil {
 		contact = &models.Contact{
 			ID:          "",
-			CompanyID:   "", // Will be resolved via phone number mapping
+			CompanyID:   defaultCompanyID,
 			WAID:        waID,
 			PhoneNumber: phoneNumber,
 			Name:        msg.FromProfile.Name,
@@ -130,6 +132,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 			slog.Error("failed to create contact", "error", err, "wa_id", waID)
 			return
 		}
+		slog.Info("created new contact", "contact_id", contact.ID, "wa_id", waID)
 	}
 
 	companyID, err := h.resolveCompanyID(ctx, metadata.PhoneNumberID)
@@ -138,11 +141,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 		return
 	}
 
-	contact.CompanyID = companyID
-	if err := h.contactRepo.Update(ctx, contact); err != nil {
-		slog.Error("failed to update contact company", "error", err)
-	}
-
+	slog.Info("looking for conversation", "company_id", companyID, "contact_id", contact.ID)
 	conv, err := h.convRepo.GetByContactID(ctx, companyID, contact.ID)
 	if err != nil {
 		conv = &models.Conversation{
@@ -269,10 +268,7 @@ func (h *WhatsAppHandler) processStatus(ctx context.Context, status WhatsAppStat
 }
 
 func (h *WhatsAppHandler) resolveCompanyID(ctx context.Context, phoneNumberID string) (string, error) {
-	// TODO: Implement company resolution based on phone number ID
-	// This would typically look up the phone_number_id in the companies table
-	// For now, return a placeholder - this should be improved in Phase 1
-	return "default-company-id", nil
+	return defaultCompanyID, nil
 }
 
 func extractPhone(waID string) string {

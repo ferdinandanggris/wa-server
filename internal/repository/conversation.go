@@ -17,6 +17,10 @@ func NewConversationRepository(db *DB) *ConversationRepository {
 }
 
 func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conversation) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	if conv.ID == "" {
 		conv.ID = generateUUID()
 	}
@@ -30,19 +34,34 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		conv.StartedAt = time.Now().UTC()
 	}
 
+	if conv.ID == "" {
+		conv.ID = generateUUID()
+	}
+
+	var companyID, contactID, assignedAgentID interface{}
+	if conv.CompanyID != "" {
+		companyID = conv.CompanyID
+	}
+	if conv.ContactID != "" {
+		contactID = conv.ContactID
+	}
+	if conv.AssignedAgentID != "" {
+		assignedAgentID = conv.AssignedAgentID
+	}
+
 	query := `
 		INSERT INTO conversations (
 			id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
 			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		conv.ID,
-		conv.CompanyID,
-		conv.ContactID,
-		conv.AssignedAgentID,
+		companyID,
+		contactID,
+		assignedAgentID,
 		conv.Status,
 		conv.LastCustomerMessageAt,
 		conv.LastAgentMessageAt,

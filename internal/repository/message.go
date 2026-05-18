@@ -28,7 +28,10 @@ func NewMessageRepository(db *DB) *MessageRepository {
 }
 
 func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) error {
-	// Let PostgreSQL generate the ID
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	msg.ID = uuid.New().String()
 
 	if msg.MessageID == "" {

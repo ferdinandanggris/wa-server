@@ -27,14 +27,19 @@ func (r *ContactRepository) Create(ctx context.Context, contact *models.Contact)
 		contact.UpdatedAt = time.Now().UTC()
 	}
 
+	var companyID interface{}
+	if contact.CompanyID != "" {
+		companyID = contact.CompanyID
+	}
+
 	query := `
 		INSERT INTO contacts (id, company_id, wa_id, phone_number, name, profile_picture_url, is_blocked, last_seen_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		contact.ID,
-		contact.CompanyID,
+		companyID,
 		contact.WAID,
 		contact.PhoneNumber,
 		contact.Name,
@@ -169,9 +174,14 @@ func (r *ContactRepository) Upsert(ctx context.Context, contact *models.Contact)
 		contact.UpdatedAt = time.Now().UTC()
 	}
 
+	var companyID interface{}
+	if contact.CompanyID != "" {
+		companyID = contact.CompanyID
+	}
+
 	query := `
 		INSERT INTO contacts (id, company_id, wa_id, phone_number, name, profile_picture_url, is_blocked, last_seen_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (company_id, wa_id) DO UPDATE SET
 			phone_number = EXCLUDED.phone_number,
 			name = EXCLUDED.name,
@@ -182,7 +192,7 @@ func (r *ContactRepository) Upsert(ctx context.Context, contact *models.Contact)
 
 	err := r.db.QueryRowContext(ctx, query,
 		contact.ID,
-		contact.CompanyID,
+		companyID,
 		contact.WAID,
 		contact.PhoneNumber,
 		contact.Name,
