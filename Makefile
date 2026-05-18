@@ -6,9 +6,7 @@ GO=go
 GOFLAGS=-v
 
 build:
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-api ./cmd/api
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-worker ./cmd/worker
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-websocket ./cmd/websocket
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server
 
 test:
 	$(GO) test -v -race -coverprofile=coverage.out ./...
@@ -25,14 +23,8 @@ fmt:
 vet:
 	$(GO) vet ./...
 
-run-api:
-	$(GO) run ./cmd/api
-
-run-worker:
-	$(GO) run ./cmd/worker
-
-run-websocket:
-	$(GO) run ./cmd/websocket
+run:
+	$(GO) run ./cmd/server
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -53,15 +45,13 @@ migrate:
 
 help:
 	@echo "Available targets:"
-	@echo "  build         - Build all applications"
+	@echo "  build         - Build server binary"
 	@echo "  test          - Run tests with race detector"
 	@echo "  test-coverage - Run tests with coverage report"
 	@echo "  lint          - Run linters"
 	@echo "  fmt           - Format code"
 	@echo "  vet           - Run go vet"
-	@echo "  run-api       - Run API server"
-	@echo "  run-worker    - Run worker"
-	@echo "  run-websocket - Run WebSocket server"
+	@echo "  run           - Run server"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  deps          - Install dependencies"
 	@echo "  docker-up     - Start Docker services"
