@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	ExchangeWhatsApp = "whatsapp"
-	QueueInbound     = "inbound_messages"
-	QueueOutbound    = "outbound_messages"
+	ExchangeWhatsApp   = "whatsapp"
+	QueueInbound       = "inbound_messages"
+	QueueOutbound      = "outbound_messages"
 	RoutingKeyInbound  = "inbound"
 	RoutingKeyOutbound = "outbound"
 )

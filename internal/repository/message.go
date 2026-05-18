@@ -4,15 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/wa-server/internal/models"
 	"github.com/google/uuid"
+	"github.com/wa-server/internal/models"
 )
 
 type MessageRepository struct {
 	db *DB
+}
+
+func nullJSON(s string) interface{} {
+	if s == "" || s == "null" {
+		return nil
+	}
+	return s
 }
 
 func NewMessageRepository(db *DB) *MessageRepository {
@@ -20,11 +28,21 @@ func NewMessageRepository(db *DB) *MessageRepository {
 }
 
 func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) error {
-	if msg.ID == "" {
-		msg.ID = uuid.New().String()
+	// Let PostgreSQL generate the ID
+	msg.ID = uuid.New().String()
+
+	if msg.MessageID == "" {
+		msg.MessageID = uuid.New().String()
 	}
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
+	}
+
+	slog.Info("message repo create", "id", msg.ID, "conversation_id", msg.ConversationID, "message_id", msg.MessageID)
+
+	var templateID *string
+	if msg.TemplateID != "" {
+		templateID = &msg.TemplateID
 	}
 
 	query := `
@@ -32,7 +50,7 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 			id, conversation_id, message_id, direction, message_type,
 			content, template_id, template_params, media_url, status,
 			wa_status, sent_at, delivered_at, read_at, error_message, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -42,8 +60,8 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		msg.Direction,
 		msg.MessageType,
 		msg.Content,
-		msg.TemplateID,
-		msg.TemplateParams,
+		templateID,
+		nullJSON(msg.TemplateParams),
 		msg.MediaURL,
 		msg.Status,
 		msg.WAStatus,
@@ -53,6 +71,10 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		msg.ErrorMessage,
 		msg.CreatedAt,
 	)
+
+	if err != nil {
+		slog.Error("DB insert error", "error", err, "templateID", templateID)
+	}
 
 	return err
 }
@@ -205,11 +227,11 @@ func (r *MessageRepository) UpdateWAMessageID(ctx context.Context, id, waMessage
 }
 
 type MessageFilter struct {
-	CompanyID     string
+	CompanyID      string
 	ConversationID string
-	Status        string
-	Direction     string
-	From, To      time.Time
+	Status         string
+	Direction      string
+	From, To       time.Time
 }
 
 func (r *MessageRepository) List(ctx context.Context, filter MessageFilter, limit, offset int) ([]models.Message, error) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wa-server/internal/models"
@@ -11,14 +12,14 @@ import (
 )
 
 type OutboundHandler struct {
-	msgRepo     models.MessageRepository
-	queuePub   *queue.Publisher
-	companyID  string
+	msgRepo   models.MessageRepository
+	queuePub  *queue.Publisher
+	companyID string
 }
 
 func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string) *OutboundHandler {
 	return &OutboundHandler{
-		msgRepo:    msgRepo,
+		msgRepo:   msgRepo,
 		queuePub:  queuePub,
 		companyID: companyID,
 	}
@@ -63,6 +64,8 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationID := req.ConversationID
+	slog.Info("send message request", "conversation_id", conversationID, "content", req.Content, "message_type", req.MessageType)
+
 	if conversationID == "" {
 		// TODO: Create conversation from phone number
 		slog.Warn("conversation_id not provided, need to implement contact/conversation lookup")
@@ -77,7 +80,7 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := &models.Message{
-		ID:              "",
+		ID:             "",
 		ConversationID: conversationID,
 		Direction:      string(models.MessageDirectionOutbound),
 		MessageType:    messageType,
@@ -86,11 +89,11 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		TemplateID:     req.TemplateID,
 		TemplateParams: paramsJSON,
 		Status:         string(models.MessageStatusPending),
-		CreatedAt:       time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(),
 	}
 
 	if err := h.msgRepo.Create(r.Context(), msg); err != nil {
-		slog.Error("failed to create message", "error", err)
+		slog.Error("failed to create message", "error", err, "conversation_id", msg.ConversationID, "message_id", msg.MessageID, "content", msg.Content)
 		http.Error(w, "failed to create message", http.StatusInternalServerError)
 		return
 	}
@@ -112,7 +115,20 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
-	conversationID := r.URL.Query().Get("conversation_id")
+	// Extract conversation ID from path: /api/v1/conversations/{id}/messages
+	path := r.URL.Path
+	conversationID := ""
+	if strings.HasPrefix(path, "/api/v1/conversations/") {
+		rest := strings.TrimPrefix(path, "/api/v1/conversations/")
+		if idx := strings.Index(rest, "/messages"); idx > 0 {
+			conversationID = rest[:idx]
+		}
+	}
+
+	if conversationID == "" {
+		conversationID = r.URL.Query().Get("conversation_id")
+	}
+
 	if conversationID == "" {
 		http.Error(w, "conversation_id is required", http.StatusBadRequest)
 		return

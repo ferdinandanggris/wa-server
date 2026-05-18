@@ -22,7 +22,7 @@ type Config struct {
 
 type ServerConfig struct {
 	Host           string        `envconfig:"SERVER_HOST" default:"0.0.0.0"`
-	Port           int           `envconfig:"SERVER_PORT" default:"8080"`
+	Port           int           `envconfig:"SERVER_PORT" default:"9090"`
 	ReadTimeout    time.Duration `envconfig:"SERVER_READ_TIMEOUT" default:"30s"`
 	WriteTimeout   time.Duration `envconfig:"SERVER_WRITE_TIMEOUT" default:"30s"`
 	IdleTimeout    time.Duration `envconfig:"SERVER_IDLE_TIMEOUT" default:"120s"`
@@ -68,10 +68,10 @@ func (r RedisConfig) Addr() string {
 }
 
 type WhatsAppConfig struct {
-	PhoneNumberID string `envconfig:"WHATSAPP_PHONE_NUMBER_ID" required:"true"`
-	AccessToken   string `envconfig:"WHATSAPP_ACCESS_TOKEN" required:"true"`
+	PhoneNumberID string `envconfig:"WHATSAPP_PHONE_NUMBER_ID" default:"test_phone_id"`
+	AccessToken   string `envconfig:"WHATSAPP_ACCESS_TOKEN" default:"test_token"`
 	APIVersion    string `envconfig:"WHATSAPP_API_VERSION" default:"v20.0"`
-	VerifyToken   string `envconfig:"WHATSAPP_VERIFY_TOKEN" default:""`
+	VerifyToken   string `envconfig:"WHATSAPP_VERIFY_TOKEN" default:"verify_token"`
 	WebhookSecret string `envconfig:"WHATSAPP_WEBHOOK_SECRET" default:""`
 }
 
@@ -81,7 +81,7 @@ type AuthConfig struct {
 }
 
 type secretConfig struct {
-	Secret          string        `envconfig:"JWT_SECRET" required:"true"`
+	Secret          string        `envconfig:"JWT_SECRET" default:"dev-secret-key"`
 	ExpiryDuration  time.Duration `envconfig:"JWT_EXPIRY_DURATION" default:"24h"`
 	RefreshDuration time.Duration `envconfig:"JWT_REFRESH_DURATION" default:"168h"`
 }

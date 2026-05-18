@@ -16,25 +16,25 @@ type WhatsAppClient interface {
 }
 
 type WorkerPool struct {
-	rmq        *RabbitMQ
-	whatsapp   WhatsAppClient
-	msgRepo    models.MessageRepository
-	companyID  string
-	workers    int
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
+	rmq       *RabbitMQ
+	whatsapp  WhatsAppClient
+	msgRepo   models.MessageRepository
+	companyID string
+	workers   int
+	wg        sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func NewWorkerPool(rmq *RabbitMQ, whatsapp WhatsAppClient, msgRepo models.MessageRepository, workers int) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
-		rmq:       rmq,
-		whatsapp:  whatsapp,
-		msgRepo:   msgRepo,
-		workers:   workers,
-		ctx:       ctx,
-		cancel:    cancel,
+		rmq:      rmq,
+		whatsapp: whatsapp,
+		msgRepo:  msgRepo,
+		workers:  workers,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -98,7 +98,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 	slog.Info("processing outbound message", "message_id", message.ID)
 
-	phoneNumberID := "default" // TODO: Resolve from conversation/company
+	phoneNumberID := "default"   // TODO: Resolve from conversation/company
 	to := message.ConversationID // TODO: Resolve to phone number
 
 	var waMessageID string
@@ -144,19 +144,19 @@ func parseTemplateParams(params string) map[string]string {
 }
 
 type Config struct {
-	RabbitMQ   *config.RabbitMQConfig
-	WhatsApp   *config.WhatsAppConfig
-	Workers    int `envconfig:"WORKER_POOL_WORKERS" default:"5"`
+	RabbitMQ *config.RabbitMQConfig
+	WhatsApp *config.WhatsAppConfig
+	Workers  int `envconfig:"WORKER_POOL_WORKERS" default:"5"`
 }
 
 type OutboundMessage struct {
-	ID             string                 `json:"id"`
-	ConversationID string                 `json:"conversation_id"`
-	CompanyID     string                 `json:"company_id"`
-	To            string                 `json:"to"`
-	MessageType   string                 `json:"message_type"`
-	Content       string                 `json:"content"`
-	MediaURL      string                 `json:"media_url,omitempty"`
-	TemplateID    string                 `json:"template_id,omitempty"`
-	TemplateParams map[string]string     `json:"template_params,omitempty"`
+	ID             string            `json:"id"`
+	ConversationID string            `json:"conversation_id"`
+	CompanyID      string            `json:"company_id"`
+	To             string            `json:"to"`
+	MessageType    string            `json:"message_type"`
+	Content        string            `json:"content"`
+	MediaURL       string            `json:"media_url,omitempty"`
+	TemplateID     string            `json:"template_id,omitempty"`
+	TemplateParams map[string]string `json:"template_params,omitempty"`
 }
