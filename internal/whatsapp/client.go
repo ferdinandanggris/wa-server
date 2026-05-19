@@ -170,6 +170,106 @@ func (c *Client) GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNum
 	return result.Data, nil
 }
 
+func (c *Client) GetBusinessProfile(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error) {
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/whatsapp_business_profile", c.APIVersion, phoneNumberID)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	q := req.URL.Query()
+	q.Set("fields", "about,address,description,email,profile_picture_url,websites,vertical")
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("WhatsApp API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	var result models.WhatsAppBusinessProfileResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("no business profile data found")
+	}
+
+	return &result.Data[0], nil
+}
+
+func (c *Client) UpdateBusinessProfile(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error {
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/whatsapp_business_profile", c.APIVersion, phoneNumberID)
+
+	payload := map[string]interface{}{
+		"messaging_product": "whatsapp",
+	}
+	if profile.About != "" {
+		payload["about"] = profile.About
+	}
+	if profile.Address != "" {
+		payload["address"] = profile.Address
+	}
+	if profile.Description != "" {
+		payload["description"] = profile.Description
+	}
+	if profile.Email != "" {
+		payload["email"] = profile.Email
+	}
+	if profile.Vertical != "" {
+		payload["vertical"] = profile.Vertical
+	}
+	if len(profile.Websites) > 0 {
+		websitesJSON, _ := json.Marshal(profile.Websites)
+		payload["websites"] = string(websitesJSON)
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("WhatsApp API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("WhatsApp API returned success=false")
+	}
+
+	return nil
+}
+
 func (c *Client) SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL string) (string, error) {
 	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", c.APIVersion, phoneNumberID)
 

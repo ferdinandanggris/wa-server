@@ -9,8 +9,10 @@ import (
 )
 
 type mockPhoneNumberRepo struct {
-	upsertFunc func(ctx context.Context, pn *models.PhoneNumber) error
-	listFunc   func(ctx context.Context) ([]models.PhoneNumber, error)
+	upsertFunc        func(ctx context.Context, pn *models.PhoneNumber) error
+	listFunc          func(ctx context.Context) ([]models.PhoneNumber, error)
+	getByIDFunc       func(ctx context.Context, id string) (*models.PhoneNumber, error)
+	assignCompanyFunc func(ctx context.Context, id, companyID string) error
 }
 
 func (m *mockPhoneNumberRepo) Upsert(ctx context.Context, pn *models.PhoneNumber) error {
@@ -18,6 +20,12 @@ func (m *mockPhoneNumberRepo) Upsert(ctx context.Context, pn *models.PhoneNumber
 }
 func (m *mockPhoneNumberRepo) List(ctx context.Context) ([]models.PhoneNumber, error) {
 	return m.listFunc(ctx)
+}
+func (m *mockPhoneNumberRepo) GetByID(ctx context.Context, id string) (*models.PhoneNumber, error) {
+	return m.getByIDFunc(ctx, id)
+}
+func (m *mockPhoneNumberRepo) AssignCompany(ctx context.Context, id, companyID string) error {
+	return m.assignCompanyFunc(ctx, id, companyID)
 }
 
 type mockConvRepoForPhone struct {
@@ -29,11 +37,19 @@ func (m *mockConvRepoForPhone) GetByPhoneNumber(ctx context.Context, phoneNumber
 }
 
 type mockWhatsappPhone struct {
-	getPhoneNumbersFunc func(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
+	getPhoneNumbersFunc     func(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
+	getBusinessProfileFunc  func(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error)
+	updateBusinessProfileFunc func(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error
 }
 
 func (m *mockWhatsappPhone) GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error) {
 	return m.getPhoneNumbersFunc(ctx)
+}
+func (m *mockWhatsappPhone) GetBusinessProfile(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error) {
+	return m.getBusinessProfileFunc(ctx, phoneNumberID)
+}
+func (m *mockWhatsappPhone) UpdateBusinessProfile(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error {
+	return m.updateBusinessProfileFunc(ctx, phoneNumberID, profile)
 }
 
 func TestPhoneNumberService_SyncFromMeta_Success(t *testing.T) {
@@ -188,5 +204,78 @@ func TestPhoneNumberService_List_Error(t *testing.T) {
 	_, err := svc.List(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestPhoneNumberService_AssignToCompany(t *testing.T) {
+	repo := &mockPhoneNumberRepo{
+		assignCompanyFunc: func(ctx context.Context, id, companyID string) error {
+			if id != "pn-id" {
+				t.Fatalf("id = %q, want pn-id", id)
+			}
+			if companyID != "c1" {
+				t.Fatalf("companyID = %q, want c1", companyID)
+			}
+			return nil
+		},
+		getByIDFunc: func(ctx context.Context, id string) (*models.PhoneNumber, error) {
+			return &models.PhoneNumber{ID: "pn-id", PhoneNumber: "+62811", CompanyID: "c1"}, nil
+		},
+	}
+	svc := NewPhoneNumberService(repo, &mockConvRepoForPhone{}, &mockWhatsappPhone{})
+	pn, err := svc.AssignToCompany(context.Background(), "pn-id", "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pn.CompanyID != "c1" {
+		t.Fatalf("CompanyID = %q, want c1", pn.CompanyID)
+	}
+}
+
+func TestPhoneNumberService_GetProfile(t *testing.T) {
+	repo := &mockPhoneNumberRepo{
+		getByIDFunc: func(ctx context.Context, id string) (*models.PhoneNumber, error) {
+			return &models.PhoneNumber{ID: "pn-id", PhoneNumberID: "meta-pn-id"}, nil
+		},
+	}
+	wa := &mockWhatsappPhone{
+		getBusinessProfileFunc: func(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error) {
+			if phoneNumberID != "meta-pn-id" {
+				t.Fatalf("phoneNumberID = %q, want meta-pn-id", phoneNumberID)
+			}
+			return &models.WhatsAppBusinessProfile{About: "Test about", Email: "test@test.com"}, nil
+		},
+	}
+	svc := NewPhoneNumberService(repo, &mockConvRepoForPhone{}, wa)
+	profile, err := svc.GetProfile(context.Background(), "pn-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.About != "Test about" || profile.Email != "test@test.com" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestPhoneNumberService_UpdateProfile(t *testing.T) {
+	repo := &mockPhoneNumberRepo{
+		getByIDFunc: func(ctx context.Context, id string) (*models.PhoneNumber, error) {
+			return &models.PhoneNumber{ID: "pn-id", PhoneNumberID: "meta-pn-id"}, nil
+		},
+	}
+	wa := &mockWhatsappPhone{
+		updateBusinessProfileFunc: func(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error {
+			if phoneNumberID != "meta-pn-id" {
+				t.Fatalf("phoneNumberID = %q, want meta-pn-id", phoneNumberID)
+			}
+			if profile.About != "New about" {
+				t.Fatalf("About = %q, want 'New about'", profile.About)
+			}
+			return nil
+		},
+	}
+	svc := NewPhoneNumberService(repo, &mockConvRepoForPhone{}, wa)
+	err := svc.UpdateProfile(context.Background(), "pn-id", &models.WhatsAppBusinessProfile{About: "New about"})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -70,6 +70,20 @@ func scanPhoneNumber(row interface{ Scan(...interface{}) error }) (*models.Phone
 	return &pn, nil
 }
 
+func (r *PhoneNumberRepository) GetByID(ctx context.Context, id string) (*models.PhoneNumber, error) {
+	query := `SELECT ` + phoneNumberCols + ` FROM phone_numbers WHERE id = $1`
+	return scanPhoneNumber(r.db.QueryRowContext(ctx, query, id))
+}
+
+func (r *PhoneNumberRepository) AssignCompany(ctx context.Context, id, companyID string) error {
+	query := `UPDATE phone_numbers SET company_id = $1::uuid, updated_at = $2 WHERE id = $3`
+	_, err := r.db.ExecContext(ctx, query, companyID, time.Now().UTC(), id)
+	if err != nil {
+		return fmt.Errorf("failed to assign company to phone number: %w", err)
+	}
+	return nil
+}
+
 const phoneNumberCols = `id, company_id, phone_number, phone_number_id, is_active, created_at, updated_at, last_sync_pricing`
 
 func (r *PhoneNumberRepository) GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.PhoneNumber, error) {

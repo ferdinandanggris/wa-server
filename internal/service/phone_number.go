@@ -10,7 +10,9 @@ import (
 
 type PhoneNumberRepository interface {
 	Upsert(ctx context.Context, pn *models.PhoneNumber) error
+	GetByID(ctx context.Context, id string) (*models.PhoneNumber, error)
 	List(ctx context.Context) ([]models.PhoneNumber, error)
+	AssignCompany(ctx context.Context, id, companyID string) error
 }
 
 type ConversationRepoForPhoneNumber interface {
@@ -19,6 +21,8 @@ type ConversationRepoForPhoneNumber interface {
 
 type WhatsAppClientForPhoneNumber interface {
 	GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
+	GetBusinessProfile(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error)
+	UpdateBusinessProfile(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error
 }
 
 type PhoneNumberService struct {
@@ -65,4 +69,27 @@ func (s *PhoneNumberService) SyncFromMeta(ctx context.Context) (int, error) {
 
 func (s *PhoneNumberService) List(ctx context.Context) ([]models.PhoneNumber, error) {
 	return s.repo.List(ctx)
+}
+
+func (s *PhoneNumberService) AssignToCompany(ctx context.Context, id, companyID string) (*models.PhoneNumber, error) {
+	if err := s.repo.AssignCompany(ctx, id, companyID); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, id)
+}
+
+func (s *PhoneNumberService) GetProfile(ctx context.Context, id string) (*models.WhatsAppBusinessProfile, error) {
+	pn, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("phone number not found: %w", err)
+	}
+	return s.whatsapp.GetBusinessProfile(ctx, pn.PhoneNumberID)
+}
+
+func (s *PhoneNumberService) UpdateProfile(ctx context.Context, id string, profile *models.WhatsAppBusinessProfile) error {
+	pn, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("phone number not found: %w", err)
+	}
+	return s.whatsapp.UpdateBusinessProfile(ctx, pn.PhoneNumberID, profile)
 }

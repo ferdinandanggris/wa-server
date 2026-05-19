@@ -154,7 +154,7 @@ func run() error {
 	outboundHandler.RegisterRoutes(mux)
 	templateHandler.RegisterRoutes(mux)
 	billingHandler.RegisterRoutes(mux)
-	phoneNumberHandler.RegisterRoutes(mux)
+	phoneNumberHandler.RegisterRoutes(mux, authMW)
 	pricingHandler.RegisterRoutes(mux)
 	userHandler.RegisterRoutes(mux, authMW)
 	companyHandler.RegisterRoutes(mux, authMW)
