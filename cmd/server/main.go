@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,10 +12,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wa-server/internal/agent"
 	"github.com/wa-server/internal/api/handlers"
 	"github.com/wa-server/internal/api/webhook"
 	"github.com/wa-server/internal/config"
+	"github.com/wa-server/internal/metrics"
 	"github.com/wa-server/internal/queue"
+	"github.com/wa-server/internal/ratelimit"
 	"github.com/wa-server/internal/repository"
 	"github.com/wa-server/internal/service"
 	"github.com/wa-server/internal/whatsapp"
@@ -58,6 +62,18 @@ func run() error {
 	defer rmq.Close()
 	slog.Info("connected to RabbitMQ")
 
+	rdb, err := agent.NewRedisClient(cfg.Redis.Addr(), cfg.Redis.Password, cfg.Redis.DB)
+	if err != nil {
+		return fmt.Errorf("connect to Redis: %w", err)
+	}
+	defer rdb.Close()
+	slog.Info("connected to Redis")
+
+	met := metrics.New()
+
+	bucket := ratelimit.NewTokenBucket(float64(cfg.RateLimit.RequestsPerSecond), cfg.RateLimit.Burst)
+	transport := ratelimit.NewTransport(nil, bucket, met)
+
 	msgRepo := repository.NewMessageRepository(db)
 	contactRepo := repository.NewContactRepository(db)
 	convRepo := repository.NewConversationRepository(db)
@@ -82,6 +98,8 @@ func run() error {
 	)
 
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.WABAID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
+	waClient.HTTPClient.Transport = transport
+
 	templateSvc := service.NewTemplateService(templateRepo, waClient)
 	billingSvc := service.NewBillingService(billingRepo, companyRepo, waClient)
 	phoneNumberSvc := service.NewPhoneNumberService(phoneNumberRepo, convRepo, waClient)
@@ -93,7 +111,14 @@ func run() error {
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(phoneNumberSvc)
 	pricingHandler := handlers.NewPricingHandler(pricingSvc)
 
+	agentTrackers := make([]*agent.Tracker, 5)
+	for i := 0; i < 5; i++ {
+		agentID := fmt.Sprintf("worker-%d", i)
+		agentTrackers[i] = agent.NewTracker(rdb, agentID)
+	}
+
 	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, phoneNumberRepo, 5)
+	workerPool.WithMetrics(met).WithAgentTrackers(agentTrackers)
 	if err := workerPool.Start(); err != nil {
 		return fmt.Errorf("start worker pool: %w", err)
 	}
@@ -106,6 +131,7 @@ func run() error {
 		if r.Method == http.MethodGet {
 			waHandler.Verify(w, r)
 		} else if r.Method == http.MethodPost {
+			met.IncMessagesReceived()
 			waHandler.HandleWebhook(w, r)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -113,12 +139,22 @@ func run() error {
 	})
 
 	mux.HandleFunc("/ws", wsHub.HandleWS)
+	mux.Handle("/metrics", met.Handler())
 
 	outboundHandler.RegisterRoutes(mux)
 	templateHandler.RegisterRoutes(mux)
 	billingHandler.RegisterRoutes(mux)
 	phoneNumberHandler.RegisterRoutes(mux)
 	pricingHandler.RegisterRoutes(mux)
+
+	mux.HandleFunc("/api/v1/agents", func(w http.ResponseWriter, r *http.Request) {
+		agents, err := agent.ListAgents(r.Context(), rdb)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, agents)
+	})
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -195,4 +231,11 @@ func run() error {
 
 	slog.Info("server exited")
 	return nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	data, _ := json.Marshal(v)
+	_, _ = w.Write(data)
 }

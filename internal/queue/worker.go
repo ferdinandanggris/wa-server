@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wa-server/internal/agent"
+	"github.com/wa-server/internal/metrics"
 	"github.com/wa-server/internal/models"
 	"github.com/wa-server/internal/repository"
 )
@@ -19,19 +21,16 @@ type WhatsAppClient interface {
 	GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
 }
 
-// CompanyRepoForWorker isolates company methods needed by the worker.
 type CompanyRepoForWorker interface {
 	GetByID(ctx context.Context, id string) (*models.Company, error)
 	TryIncrementQuota(ctx context.Context, id string, amount int) (bool, error)
 	DecrementQuota(ctx context.Context, id string, amount int) error
 }
 
-// BillingRepoForWorker isolates billing methods needed by the worker.
 type BillingRepoForWorker interface {
 	Create(ctx context.Context, log *models.BillingLog) error
 }
 
-// ConversationRepoForWorker isolates conversation methods needed by the worker.
 type ConversationRepoForWorker interface {
 	GetByID(ctx context.Context, id string) (*models.Conversation, error)
 }
@@ -40,7 +39,6 @@ type PhoneNumberRepoForWorker interface {
 	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.PhoneNumber, error)
 }
 
-// WorkerPool manages concurrent RabbitMQ consumers for message processing.
 type WorkerPool struct {
 	rmq             *RabbitMQ
 	whatsapp        WhatsAppClient
@@ -54,9 +52,10 @@ type WorkerPool struct {
 	wg              sync.WaitGroup
 	ctx             context.Context
 	cancel          context.CancelFunc
+	metrics         *metrics.Metrics
+	agentTrackers   []*agent.Tracker
 }
 
-// NewWorkerPool creates a worker pool with the specified number of concurrent workers.
 func NewWorkerPool(
 	rmq *RabbitMQ,
 	whatsapp WhatsAppClient,
@@ -84,10 +83,23 @@ func NewWorkerPool(
 	}
 }
 
+func (wp *WorkerPool) WithMetrics(m *metrics.Metrics) *WorkerPool {
+	wp.metrics = m
+	return wp
+}
+
+func (wp *WorkerPool) WithAgentTrackers(trackers []*agent.Tracker) *WorkerPool {
+	wp.agentTrackers = trackers
+	return wp
+}
+
 func (wp *WorkerPool) Start() error {
 	for i := 0; i < wp.workers; i++ {
 		wp.wg.Add(1)
 		go wp.worker(i)
+	}
+	if wp.metrics != nil {
+		wp.metrics.SetWorkerActive(wp.workers)
 	}
 	slog.Info("worker pool started", "workers", wp.workers)
 	return nil
@@ -96,10 +108,22 @@ func (wp *WorkerPool) Start() error {
 func (wp *WorkerPool) Stop() {
 	wp.cancel()
 	wp.wg.Wait()
+	if wp.metrics != nil {
+		wp.metrics.SetWorkerActive(0)
+	}
+	for _, t := range wp.agentTrackers {
+		t.Stop()
+	}
 	slog.Info("worker pool stopped")
 }
 
 func (wp *WorkerPool) worker(id int) {
+	tracker := wp.trackerFor(id)
+	if tracker != nil {
+		tracker.Start(wp.ctx)
+		defer tracker.SetIdle()
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("worker panic recovered", "worker_id", id, "panic", r)
@@ -128,15 +152,28 @@ func (wp *WorkerPool) worker(id int) {
 				return
 			}
 			slog.Info("worker got message", "worker_id", id, "body_len", len(msg.Body))
-			wp.processMessage(wp.ctx, msg.Body)
+			if tracker != nil {
+				tracker.SetRunning()
+			}
+			wp.processMessage(wp.ctx, msg.Body, id)
 			if err := msg.Ack(false); err != nil {
 				slog.Error("failed to ack message", "error", err, "worker_id", id)
+			}
+			if tracker != nil {
+				tracker.SetIdle()
 			}
 		}
 	}
 }
 
-func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
+func (wp *WorkerPool) trackerFor(id int) *agent.Tracker {
+	if id < len(wp.agentTrackers) {
+		return wp.agentTrackers[id]
+	}
+	return nil
+}
+
+func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID int) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("processMessage panic", "panic", r)
@@ -167,6 +204,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 	if err != nil {
 		slog.Error("failed to get phone number", "error", err, "conversation_id", message.ConversationID)
 		wp.failMessage(ctx, message.ID, "phone number not found")
+		wp.incFailed(message.ID, workerID)
 		return
 	}
 
@@ -176,6 +214,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 	if err != nil {
 		slog.Error("failed to get phone number record", "error", err, "phone", phone)
 		wp.failMessage(ctx, message.ID, "phone number not registered")
+		wp.incFailed(message.ID, workerID)
 		return
 	}
 
@@ -186,11 +225,13 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		if err != nil {
 			slog.Error("quota check failed", "error", err, "company_id", companyID)
 			wp.failMessage(ctx, message.ID, "internal error")
+			wp.incFailed(message.ID, workerID)
 			return
 		}
 		if !ok {
 			slog.Warn("quota exceeded", "company_id", companyID, "message_id", message.ID)
 			wp.failMessage(ctx, message.ID, "quota exceeded")
+			wp.incFailed(message.ID, workerID)
 			return
 		}
 	}
@@ -215,6 +256,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		}
 
 		wp.failMessage(ctx, message.ID, sendErr.Error())
+		wp.incFailed(message.ID, workerID)
 		return
 	}
 
@@ -244,7 +286,26 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		}
 	}
 
+	if wp.metrics != nil {
+		wp.metrics.IncMessagesSent("success", "whatsapp")
+	}
+
+	tracker := wp.trackerFor(workerID)
+	if tracker != nil {
+		tracker.IncMessagesSent()
+	}
+
 	slog.Info("message sent successfully", "message_id", message.ID, "wa_message_id", waMessageID)
+}
+
+func (wp *WorkerPool) incFailed(messageID string, workerID int) {
+	if wp.metrics != nil {
+		wp.metrics.IncMessagesFailed()
+	}
+	tracker := wp.trackerFor(workerID)
+	if tracker != nil {
+		tracker.IncMessagesFailed()
+	}
 }
 
 func (wp *WorkerPool) failMessage(ctx context.Context, messageID, errMsg string) {
