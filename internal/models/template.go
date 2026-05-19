@@ -52,4 +52,5 @@ type TemplateRepository interface {
 	GetVerified(ctx context.Context) ([]Template, error)
 	Update(ctx context.Context, tmpl *Template) error
 	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, limit, offset int) ([]Template, error)
 }

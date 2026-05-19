@@ -60,6 +60,7 @@ func run() error {
 	msgRepo := repository.NewMessageRepository(db)
 	contactRepo := repository.NewContactRepository(db)
 	convRepo := repository.NewConversationRepository(db)
+	templateRepo := repository.NewTemplateRepo(db)
 
 	publisher := queue.NewPublisher(rmq)
 
@@ -77,6 +78,7 @@ func run() error {
 
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
+	templateHandler := handlers.NewTemplateHandler(templateRepo)
 
 	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, 5)
 	if err := workerPool.Start(); err != nil {
@@ -100,6 +102,7 @@ func run() error {
 	mux.HandleFunc("/ws", wsHub.HandleWS)
 
 	outboundHandler.RegisterRoutes(mux)
+	templateHandler.RegisterRoutes(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
