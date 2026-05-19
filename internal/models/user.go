@@ -23,9 +23,18 @@ type User struct {
 type UserRole string
 
 const (
-	RoleAdmin      UserRole = "admin"
 	RoleSuperadmin UserRole = "superadmin"
+	RoleAdmin      UserRole = "admin"
+	RoleCS         UserRole = "cs"
 )
+
+func (r UserRole) Valid() bool {
+	switch r {
+	case RoleSuperadmin, RoleAdmin, RoleCS:
+		return true
+	}
+	return false
+}
 
 // UserRepository defines persistence operations for users.
 type UserRepository interface {

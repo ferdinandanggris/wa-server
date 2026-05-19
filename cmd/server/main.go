@@ -15,6 +15,7 @@ import (
 	"github.com/wa-server/internal/agent"
 	"github.com/wa-server/internal/api/handlers"
 	"github.com/wa-server/internal/api/webhook"
+	"github.com/wa-server/internal/auth"
 	"github.com/wa-server/internal/config"
 	"github.com/wa-server/internal/metrics"
 	"github.com/wa-server/internal/queue"
@@ -111,6 +112,15 @@ func run() error {
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(phoneNumberSvc)
 	pricingHandler := handlers.NewPricingHandler(pricingSvc)
 
+	jwtAuth := auth.NewJWT(cfg.Auth.JWT.Secret, cfg.Auth.JWT.ExpiryDuration, cfg.Auth.JWT.RefreshDuration)
+	userRepo := repository.NewUserRepo(db)
+	userSvc := service.NewUserService(userRepo, jwtAuth)
+	userHandler := handlers.NewUserHandler(userSvc)
+	companySvc := service.NewCompanyService(companyRepo)
+	companyHandler := handlers.NewCompanyHandler(companySvc)
+
+	authMW := auth.Middleware(jwtAuth)
+
 	agentTrackers := make([]*agent.Tracker, 5)
 	for i := 0; i < 5; i++ {
 		agentID := fmt.Sprintf("worker-%d", i)
@@ -146,6 +156,8 @@ func run() error {
 	billingHandler.RegisterRoutes(mux)
 	phoneNumberHandler.RegisterRoutes(mux)
 	pricingHandler.RegisterRoutes(mux)
+	userHandler.RegisterRoutes(mux, authMW)
+	companyHandler.RegisterRoutes(mux, authMW)
 
 	mux.HandleFunc("/api/v1/agents", func(w http.ResponseWriter, r *http.Request) {
 		agents, err := agent.ListAgents(r.Context(), rdb)
