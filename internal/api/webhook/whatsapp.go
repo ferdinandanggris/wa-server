@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ type WhatsAppHandler struct {
 	msgRepo      models.MessageRepository
 	contactRepo  models.ContactRepository
 	convRepo     models.ConversationRepository
+	tmplRepo     models.TemplateRepository
 	messageQueue MessagePublisher
 	wsHub        *WebSocketHub
 }
@@ -35,6 +37,7 @@ func NewWhatsAppHandler(
 	msgRepo models.MessageRepository,
 	contactRepo models.ContactRepository,
 	convRepo models.ConversationRepository,
+	tmplRepo models.TemplateRepository,
 	queue MessagePublisher,
 	wsHub *WebSocketHub,
 ) *WhatsAppHandler {
@@ -43,6 +46,7 @@ func NewWhatsAppHandler(
 		msgRepo:      msgRepo,
 		contactRepo:  contactRepo,
 		convRepo:     convRepo,
+		tmplRepo:     tmplRepo,
 		messageQueue: queue,
 		wsHub:        wsHub,
 	}
@@ -98,16 +102,19 @@ func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
-			if change.Value == nil {
-				continue
-			}
-
-			for _, msg := range change.Value.Messages {
-				h.processMessage(r.Context(), change.Value.Metadata, msg)
-			}
-
-			for _, status := range change.Value.Statuses {
-				h.processStatus(r.Context(), status)
+			switch change.Field {
+			case "message_template_status_update":
+				h.processTemplateStatusUpdate(r.Context(), change.Raw)
+			case "messages":
+				if change.Value == nil {
+					continue
+				}
+				for _, msg := range change.Value.Messages {
+					h.processMessage(r.Context(), change.Value.Metadata, msg)
+				}
+				for _, status := range change.Value.Statuses {
+					h.processStatus(r.Context(), status)
+				}
 			}
 		}
 	}
@@ -279,6 +286,58 @@ func (h *WhatsAppHandler) processStatus(ctx context.Context, status WhatsAppStat
 	slog.Info("updated message status", "message_id", msg.ID, "old_status", oldStatus, "new_status", status.Status)
 }
 
+func (h *WhatsAppHandler) processTemplateStatusUpdate(ctx context.Context, raw map[string]interface{}) {
+	if raw == nil {
+		return
+	}
+
+	event, _ := raw["event"].(string)
+	tmplName, _ := raw["message_template_name"].(string)
+	tmplLang, _ := raw["message_template_language"].(string)
+
+	slog.Info("template status update from webhook",
+		"event", event,
+		"template_name", tmplName,
+		"language", tmplLang,
+	)
+
+	if tmplName == "" || tmplLang == "" {
+		slog.Warn("incomplete template status update, skipping")
+		return
+	}
+
+	tmpl, err := h.tmplRepo.GetByMetaNameAndLanguage(ctx, tmplName, tmplLang)
+	if err != nil {
+		slog.Warn("template not found from webhook update, skipping", "meta_name", tmplName, "language", tmplLang)
+		return
+	}
+
+	if id, ok := raw["message_template_id"].(float64); ok {
+		tmpl.WATemplateID = fmt.Sprintf("%.0f", id)
+	}
+
+	switch event {
+	case "APPROVED":
+		tmpl.MetaStatus = "APPROVED"
+		tmpl.IsVerified = true
+	case "REJECTED", "DISABLED", "PAUSED", "FLAGGED":
+		tmpl.MetaStatus = event
+		tmpl.IsVerified = false
+	case "PENDING":
+		tmpl.MetaStatus = "PENDING"
+		tmpl.IsVerified = false
+	default:
+		tmpl.MetaStatus = event
+	}
+
+	if err := h.tmplRepo.Update(ctx, tmpl); err != nil {
+		slog.Error("failed to update template from webhook", "error", err, "id", tmpl.ID)
+		return
+	}
+
+	slog.Info("template status updated from webhook", "id", tmpl.ID, "status", tmpl.MetaStatus, "is_verified", tmpl.IsVerified)
+}
+
 func (h *WhatsAppHandler) resolveCompanyID(ctx context.Context, phoneNumberID string) (string, error) {
 	return defaultCompanyID, nil
 }
@@ -343,8 +402,36 @@ type WhatsAppEntry struct {
 }
 
 type WhatsAppChange struct {
-	Value *WhatsAppValue `json:"value"`
-	Field string         `json:"field"`
+	Value *WhatsAppValue         `json:"value,omitempty"`
+	Field string                 `json:"field"`
+	Raw   map[string]interface{} `json:"-"`
+}
+
+func (c *WhatsAppChange) UnmarshalJSON(data []byte) error {
+	type alias WhatsAppChange
+	aux := &struct {
+		Value json.RawMessage `json:"value"`
+		*alias
+	}{
+		alias: (*alias)(c),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if c.Field == "messages" && len(aux.Value) > 0 {
+		var v WhatsAppValue
+		if err := json.Unmarshal(aux.Value, &v); err != nil {
+			return err
+		}
+		c.Value = &v
+	} else if len(aux.Value) > 0 {
+		var raw map[string]interface{}
+		if err := json.Unmarshal(aux.Value, &raw); err != nil {
+			return err
+		}
+		c.Raw = raw
+	}
+	return nil
 }
 
 type WhatsAppValue struct {

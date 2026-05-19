@@ -16,6 +16,7 @@ import (
 	"github.com/wa-server/internal/config"
 	"github.com/wa-server/internal/queue"
 	"github.com/wa-server/internal/repository"
+	"github.com/wa-server/internal/service"
 	"github.com/wa-server/internal/whatsapp"
 )
 
@@ -72,13 +73,15 @@ func run() error {
 		msgRepo,
 		contactRepo,
 		convRepo,
+		templateRepo,
 		publisher,
 		wsHub,
 	)
 
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
+	templateSvc := service.NewTemplateService(templateRepo, waClient)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
-	templateHandler := handlers.NewTemplateHandler(templateRepo)
+	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
 	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, 5)
 	if err := workerPool.Start(); err != nil {

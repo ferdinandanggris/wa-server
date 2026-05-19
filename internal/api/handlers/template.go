@@ -7,36 +7,39 @@ import (
 	"strings"
 
 	"github.com/wa-server/internal/models"
+	"github.com/wa-server/internal/service"
 )
 
 type TemplateHandler struct {
-	repo models.TemplateRepository
+	svc *service.TemplateService
 }
 
-func NewTemplateHandler(repo models.TemplateRepository) *TemplateHandler {
-	return &TemplateHandler{repo: repo}
+func NewTemplateHandler(svc *service.TemplateService) *TemplateHandler {
+	return &TemplateHandler{svc: svc}
 }
 
 type CreateTemplateRequest struct {
-	WATemplateID  string `json:"wa_template_id"`
 	Name          string `json:"name"`
 	Language      string `json:"language"`
 	Category      string `json:"category"`
 	Content       string `json:"content"`
 	HeaderType    string `json:"header_type,omitempty"`
 	HeaderContent string `json:"header_content,omitempty"`
-	IsVerified    bool   `json:"is_verified"`
-	MetaStatus    string `json:"meta_status,omitempty"`
+	FooterText    string `json:"footer_text,omitempty"`
+	Buttons       string `json:"buttons,omitempty"`
+	BodyComponents string `json:"body_components,omitempty"`
 }
 
 type UpdateTemplateRequest struct {
-	WATemplateID  string `json:"wa_template_id"`
 	Name          string `json:"name"`
 	Language      string `json:"language"`
 	Category      string `json:"category"`
 	Content       string `json:"content"`
 	HeaderType    string `json:"header_type,omitempty"`
 	HeaderContent string `json:"header_content,omitempty"`
+	FooterText    string `json:"footer_text,omitempty"`
+	Buttons       string `json:"buttons,omitempty"`
+	BodyComponents string `json:"body_components,omitempty"`
 	IsVerified    bool   `json:"is_verified"`
 	MetaStatus    string `json:"meta_status,omitempty"`
 }
@@ -55,20 +58,20 @@ func (h *TemplateHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl := &models.Template{
-		WATemplateID:  req.WATemplateID,
-		Name:          req.Name,
-		Language:      req.Language,
-		Category:      req.Category,
-		Content:       req.Content,
-		HeaderType:    req.HeaderType,
-		HeaderContent: req.HeaderContent,
-		IsVerified:    req.IsVerified,
-		MetaStatus:    req.MetaStatus,
+		Name:           req.Name,
+		Language:       req.Language,
+		Category:       req.Category,
+		Content:        req.Content,
+		HeaderType:     req.HeaderType,
+		HeaderContent:  req.HeaderContent,
+		FooterText:     req.FooterText,
+		Buttons:        req.Buttons,
+		BodyComponents: req.BodyComponents,
 	}
 
-	if err := h.repo.Create(r.Context(), tmpl); err != nil {
+	if err := h.svc.CreateAndSync(r.Context(), tmpl); err != nil {
 		slog.Error("failed to create template", "error", err)
-		http.Error(w, "failed to create template", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -78,7 +81,7 @@ func (h *TemplateHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TemplateHandler) list(w http.ResponseWriter, r *http.Request) {
-	templates, err := h.repo.List(r.Context(), 100, 0)
+	templates, err := h.svc.List(r.Context(), 100, 0)
 	if err != nil {
 		slog.Error("failed to list templates", "error", err)
 		http.Error(w, "failed to list templates", http.StatusInternalServerError)
@@ -94,7 +97,7 @@ func (h *TemplateHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TemplateHandler) getByID(w http.ResponseWriter, r *http.Request, id string) {
-	tmpl, err := h.repo.GetByID(r.Context(), id)
+	tmpl, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "template not found", http.StatusNotFound)
 		return
@@ -113,19 +116,21 @@ func (h *TemplateHandler) update(w http.ResponseWriter, r *http.Request, id stri
 	defer r.Body.Close()
 
 	tmpl := &models.Template{
-		ID:            id,
-		WATemplateID:  req.WATemplateID,
-		Name:          req.Name,
-		Language:      req.Language,
-		Category:      req.Category,
-		Content:       req.Content,
-		HeaderType:    req.HeaderType,
-		HeaderContent: req.HeaderContent,
-		IsVerified:    req.IsVerified,
-		MetaStatus:    req.MetaStatus,
+		ID:             id,
+		Name:           req.Name,
+		Language:       req.Language,
+		Category:       req.Category,
+		Content:        req.Content,
+		HeaderType:     req.HeaderType,
+		HeaderContent:  req.HeaderContent,
+		FooterText:     req.FooterText,
+		Buttons:        req.Buttons,
+		BodyComponents: req.BodyComponents,
+		IsVerified:     req.IsVerified,
+		MetaStatus:     req.MetaStatus,
 	}
 
-	if err := h.repo.Update(r.Context(), tmpl); err != nil {
+	if err := h.svc.Update(r.Context(), tmpl); err != nil {
 		slog.Error("failed to update template", "error", err)
 		http.Error(w, "template not found", http.StatusNotFound)
 		return
@@ -136,17 +141,48 @@ func (h *TemplateHandler) update(w http.ResponseWriter, r *http.Request, id stri
 }
 
 func (h *TemplateHandler) delete(w http.ResponseWriter, r *http.Request, id string) {
-	if err := h.repo.Delete(r.Context(), id); err != nil {
+	if err := h.svc.Delete(r.Context(), id); err != nil {
 		http.Error(w, "template not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *TemplateHandler) syncAll(w http.ResponseWriter, r *http.Request) {
+	count, err := h.svc.SyncAll(r.Context())
+	if err != nil {
+		slog.Error("failed to sync templates", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "sync completed",
+		"synced":  count,
+	})
+}
+
+func (h *TemplateHandler) syncStatus(w http.ResponseWriter, r *http.Request) {
+	count, err := h.svc.SyncPendingStatus(r.Context())
+	if err != nil {
+		slog.Error("failed to sync pending status", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "status sync completed",
+		"updated": count,
+	})
+}
+
 func (h *TemplateHandler) extractID(path string) string {
-	rest := strings.TrimPrefix(path, "/api/v1/templates/")
+	rest := strings.TrimPrefix(path, "/api/v1/templates")
+	rest = strings.TrimPrefix(rest, "/")
 	if idx := strings.Index(rest, "/"); idx > 0 {
-		rest = rest[:idx]
+		return rest[:idx]
 	}
 	return rest
 }
@@ -164,7 +200,18 @@ func (h *TemplateHandler) RegisterRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/api/v1/templates/", func(w http.ResponseWriter, r *http.Request) {
-		id := h.extractID(r.URL.Path)
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/templates/")
+
+		if path == "sync" && r.Method == http.MethodPost {
+			h.syncAll(w, r)
+			return
+		}
+		if path == "sync/status" && r.Method == http.MethodPost {
+			h.syncStatus(w, r)
+			return
+		}
+
+		id := path
 		if id == "" {
 			http.Error(w, "template id is required", http.StatusBadRequest)
 			return
