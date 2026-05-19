@@ -53,7 +53,7 @@ type button struct {
 }
 
 func (c *Client) CreateTemplate(ctx context.Context, name, language, category string, tmpl *TemplateComponents) (string, string, error) {
-	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", c.APIVersion, c.PhoneNumberID)
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", 	c.APIVersion, c.WABAID)
 
 	components := buildComponents(tmpl)
 
@@ -102,7 +102,7 @@ func (c *Client) CreateTemplate(ctx context.Context, name, language, category st
 }
 
 func (c *Client) GetTemplates(ctx context.Context) ([]MetaTemplate, error) {
-	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", c.APIVersion, c.PhoneNumberID)
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", 	c.APIVersion, c.WABAID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
@@ -136,7 +136,7 @@ func (c *Client) GetTemplates(ctx context.Context) ([]MetaTemplate, error) {
 }
 
 func (c *Client) GetTemplateByName(ctx context.Context, name string) (*MetaTemplate, error) {
-	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", c.APIVersion, c.PhoneNumberID, name)
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", 	c.APIVersion, c.WABAID, name)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
@@ -174,7 +174,7 @@ func (c *Client) GetTemplateByName(ctx context.Context, name string) (*MetaTempl
 }
 
 func (c *Client) DeleteTemplate(ctx context.Context, name string) error {
-	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", c.APIVersion, c.PhoneNumberID, name)
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", 	c.APIVersion, c.WABAID, name)
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint, nil)
 	if err != nil {

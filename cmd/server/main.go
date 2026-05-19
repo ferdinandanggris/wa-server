@@ -78,7 +78,7 @@ func run() error {
 		wsHub,
 	)
 
-	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
+	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.WABAID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
 	templateSvc := service.NewTemplateService(templateRepo, waClient)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)

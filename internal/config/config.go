@@ -69,6 +69,7 @@ func (r RedisConfig) Addr() string {
 
 type WhatsAppConfig struct {
 	PhoneNumberID string `envconfig:"WHATSAPP_PHONE_NUMBER_ID" default:"test_phone_id"`
+	WABAID        string `envconfig:"WHATSAPP_WABA_ID" default:""`
 	AccessToken   string `envconfig:"WHATSAPP_ACCESS_TOKEN" default:"test_token"`
 	APIVersion    string `envconfig:"WHATSAPP_API_VERSION" default:"v20.0"`
 	VerifyToken   string `envconfig:"WHATSAPP_VERIFY_TOKEN" default:"verify_token"`

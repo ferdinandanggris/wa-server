@@ -12,14 +12,16 @@ import (
 
 type Client struct {
 	PhoneNumberID string
+	WABAID        string
 	AccessToken   string
 	APIVersion    string
 	HTTPClient    *http.Client
 }
 
-func NewClient(phoneNumberID, accessToken, apiVersion string) *Client {
+func NewClient(phoneNumberID, wabaID, accessToken, apiVersion string) *Client {
 	return &Client{
 		PhoneNumberID: phoneNumberID,
+		WABAID:        wabaID,
 		AccessToken:   accessToken,
 		APIVersion:    apiVersion,
 		HTTPClient: &http.Client{
