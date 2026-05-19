@@ -9,10 +9,12 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Users
+-- Password: superadmin123 / admin123
 INSERT INTO users (id, company_id, email, password_hash, name, role, is_active, created_at, updated_at)
 VALUES
-    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '00000000-0000-0000-0000-000000000001', 'admin@default.com', '$2a$10$placeholder_hash_for_testing', 'Admin Default', 'admin', true, NOW(), NOW()),
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '11111111-1111-1111-1111-111111111111', 'admin@test.com', '$2a$10$placeholder_hash_for_testing', 'Admin Test', 'admin', true, NOW(), NOW())
+    ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000001', 'superadmin@wa.com', '$2a$10$J9iALr7VfcIjPje.rIe/keODHkbprXdH2GW6zxsyV.fggdxYOzx7K', 'Super Admin', 'superadmin', true, NOW(), NOW()),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '00000000-0000-0000-0000-000000000001', 'admin@default.com', '$2a$10$7/H9vUsEdNUDCIsW/c7LfejecuJGgOwTElE2kfyxqxhYF5Dft4vJa', 'Admin Default', 'admin', true, NOW(), NOW()),
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '11111111-1111-1111-1111-111111111111', 'admin@test.com', '$2a$10$uAk8L6j2VWOd70H0jDOu/ejou1bGUDdpr.BK663Y8GgNs8uyIdDMu', 'Admin Test', 'admin', true, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- Agents
