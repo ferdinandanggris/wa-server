@@ -16,6 +16,7 @@ type Config struct {
 	RabbitMQ  RabbitMQConfig
 	Redis     RedisConfig
 	WhatsApp  WhatsAppConfig
+	Billing   BillingConfig
 	Auth      AuthConfig
 	RateLimit RateLimitConfig
 }
@@ -65,6 +66,11 @@ type RedisConfig struct {
 
 func (r RedisConfig) Addr() string {
 	return r.Host + ":" + itoa(r.Port)
+}
+
+// BillingConfig configures periodic cost sync from Meta.
+type BillingConfig struct {
+	SyncInterval time.Duration `envconfig:"BILLING_SYNC_INTERVAL" default:"24h"`
 }
 
 type WhatsAppConfig struct {

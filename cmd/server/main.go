@@ -62,6 +62,8 @@ func run() error {
 	contactRepo := repository.NewContactRepository(db)
 	convRepo := repository.NewConversationRepository(db)
 	templateRepo := repository.NewTemplateRepo(db)
+	companyRepo := repository.NewCompanyRepo(db)
+	billingRepo := repository.NewBillingRepository(db)
 
 	publisher := queue.NewPublisher(rmq)
 
@@ -80,10 +82,12 @@ func run() error {
 
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.WABAID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
 	templateSvc := service.NewTemplateService(templateRepo, waClient)
+	billingSvc := service.NewBillingService(billingRepo, companyRepo, waClient)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
+	billingHandler := handlers.NewBillingHandler(billingSvc)
 
-	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, 5)
+	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, 5)
 	if err := workerPool.Start(); err != nil {
 		return fmt.Errorf("start worker pool: %w", err)
 	}
@@ -106,6 +110,7 @@ func run() error {
 
 	outboundHandler.RegisterRoutes(mux)
 	templateHandler.RegisterRoutes(mux)
+	billingHandler.RegisterRoutes(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -122,6 +127,26 @@ func run() error {
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
+
+	billingCtx, billingCancel := context.WithCancel(context.Background())
+	defer billingCancel()
+	go func() {
+		slog.Info("starting periodic billing sync", "interval", cfg.Billing.SyncInterval)
+		ticker := time.NewTicker(cfg.Billing.SyncInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-billingCtx.Done():
+				return
+			case <-ticker.C:
+				end := time.Now()
+				start := end.Add(-7 * 24 * time.Hour)
+				if _, err := billingSvc.SyncCostsFromMeta(context.Background(), start, end); err != nil {
+					slog.Error("periodic billing sync failed", "error", err)
+				}
+			}
+		}
+	}()
 
 	errCh := make(chan error, 1)
 	go func() {

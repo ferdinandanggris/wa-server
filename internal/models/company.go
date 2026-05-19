@@ -31,5 +31,8 @@ type CompanyRepository interface {
 	Update(ctx context.Context, company *Company) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, limit, offset int) ([]Company, error)
+	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*Company, error)
 	IncrementQuota(ctx context.Context, id string, amount int) error
+	TryIncrementQuota(ctx context.Context, id string, amount int) (bool, error)
+	DecrementQuota(ctx context.Context, id string, amount int) error
 }

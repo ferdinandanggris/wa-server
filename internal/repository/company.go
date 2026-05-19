@@ -185,6 +185,70 @@ func (r *CompanyRepo) List(ctx context.Context, limit, offset int) ([]models.Com
 	return companies, nil
 }
 
+// GetByPhoneNumber finds a company by its phone number.
+func (r *CompanyRepo) GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.Company, error) {
+	query := `
+		SELECT id, name, code, phone_number, address, is_active, quota_limit, quota_used, created_at, updated_at
+		FROM companies
+		WHERE phone_number = $1
+	`
+
+	var company models.Company
+	err := r.db.QueryRowContext(ctx, query, phoneNumber).Scan(
+		&company.ID,
+		&company.Name,
+		&company.Code,
+		&company.PhoneNumber,
+		&company.Address,
+		&company.IsActive,
+		&company.QuotaLimit,
+		&company.QuotaUsed,
+		&company.CreatedAt,
+		&company.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+		return nil, ErrCompanyNotFound
+	}
+
+	return &company, nil
+}
+
+// TryIncrementQuota atomically increments quota_used if within quota_limit. Returns true if quota was available.
+func (r *CompanyRepo) TryIncrementQuota(ctx context.Context, id string, amount int) (bool, error) {
+	query := `
+		UPDATE companies
+		SET quota_used = quota_used + $2, updated_at = $3
+		WHERE id = $1 AND quota_used + $2 <= quota_limit
+	`
+
+	result, err := r.db.ExecContext(ctx, query, id, amount, time.Now())
+	if err != nil {
+		return false, fmt.Errorf("failed to try increment quota: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	return rows > 0, nil
+}
+
+// DecrementQuota reduces quota_used (floor at 0) on send failure.
+func (r *CompanyRepo) DecrementQuota(ctx context.Context, id string, amount int) error {
+	query := `
+		UPDATE companies
+		SET quota_used = GREATEST(quota_used - $2, 0), updated_at = $3
+		WHERE id = $1
+	`
+
+	_, err := r.db.ExecContext(ctx, query, id, amount, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to decrement quota: %w", err)
+	}
+
+	return nil
+}
+
 func (r *CompanyRepo) IncrementQuota(ctx context.Context, id string, amount int) error {
 	query := `
 		UPDATE companies

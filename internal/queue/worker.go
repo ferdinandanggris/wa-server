@@ -5,15 +5,32 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/wa-server/internal/models"
 	"github.com/wa-server/internal/repository"
 )
 
-// WhatsAppClient defines the interface for sending WhatsApp messages.
 type WhatsAppClient interface {
 	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
 	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
+}
+
+// CompanyRepoForWorker isolates company methods needed by the worker.
+type CompanyRepoForWorker interface {
+	GetByID(ctx context.Context, id string) (*models.Company, error)
+	TryIncrementQuota(ctx context.Context, id string, amount int) (bool, error)
+	DecrementQuota(ctx context.Context, id string, amount int) error
+}
+
+// BillingRepoForWorker isolates billing methods needed by the worker.
+type BillingRepoForWorker interface {
+	Create(ctx context.Context, log *models.BillingLog) error
+}
+
+// ConversationRepoForWorker isolates conversation methods needed by the worker.
+type ConversationRepoForWorker interface {
+	GetByID(ctx context.Context, id string) (*models.Conversation, error)
 }
 
 // WorkerPool manages concurrent RabbitMQ consumers for message processing.
@@ -22,6 +39,9 @@ type WorkerPool struct {
 	whatsapp    WhatsAppClient
 	msgRepo     models.MessageRepository
 	contactRepo *repository.ContactRepository
+	companyRepo CompanyRepoForWorker
+	billingRepo BillingRepoForWorker
+	convRepo    ConversationRepoForWorker
 	workers     int
 	wg          sync.WaitGroup
 	ctx         context.Context
@@ -29,13 +49,25 @@ type WorkerPool struct {
 }
 
 // NewWorkerPool creates a worker pool with the specified number of concurrent workers.
-func NewWorkerPool(rmq *RabbitMQ, whatsapp WhatsAppClient, msgRepo models.MessageRepository, contactRepo *repository.ContactRepository, workers int) *WorkerPool {
+func NewWorkerPool(
+	rmq *RabbitMQ,
+	whatsapp WhatsAppClient,
+	msgRepo models.MessageRepository,
+	contactRepo *repository.ContactRepository,
+	companyRepo CompanyRepoForWorker,
+	billingRepo BillingRepoForWorker,
+	convRepo ConversationRepoForWorker,
+	workers int,
+) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
 		rmq:         rmq,
 		whatsapp:    whatsapp,
 		msgRepo:     msgRepo,
 		contactRepo: contactRepo,
+		companyRepo: companyRepo,
+		billingRepo: billingRepo,
+		convRepo:    convRepo,
 		workers:     workers,
 		ctx:         ctx,
 		cancel:      cancel,
@@ -111,6 +143,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		MediaURL       string `json:"media_url"`
 		TemplateID     string `json:"template_id"`
 		TemplateParams string `json:"template_params"`
+		CompanyID      string `json:"company_id"`
 	}
 
 	if err := json.Unmarshal(body, &message); err != nil {
@@ -129,6 +162,29 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 	slog.Info("resolved phone number", "phone", phone)
 
+	conv, err := wp.convRepo.GetByID(ctx, message.ConversationID)
+	if err != nil {
+		slog.Error("failed to get conversation", "error", err, "conversation_id", message.ConversationID)
+		wp.failMessage(ctx, message.ID, "conversation not found")
+		return
+	}
+
+	companyID := conv.CompanyID
+
+	if wp.companyRepo != nil && companyID != "" {
+		ok, err := wp.companyRepo.TryIncrementQuota(ctx, companyID, 1)
+		if err != nil {
+			slog.Error("quota check failed", "error", err, "company_id", companyID)
+			wp.failMessage(ctx, message.ID, "internal error")
+			return
+		}
+		if !ok {
+			slog.Warn("quota exceeded", "company_id", companyID, "message_id", message.ID)
+			wp.failMessage(ctx, message.ID, "quota exceeded")
+			return
+		}
+	}
+
 	var waMessageID string
 	var sendErr error
 
@@ -141,6 +197,13 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 	if sendErr != nil {
 		slog.Error("failed to send message to WhatsApp", "error", sendErr, "message_id", message.ID)
+
+		if wp.companyRepo != nil && companyID != "" {
+			if err := wp.companyRepo.DecrementQuota(ctx, companyID, 1); err != nil {
+				slog.Error("failed to decrement quota on failure", "error", err)
+			}
+		}
+
 		wp.failMessage(ctx, message.ID, sendErr.Error())
 		return
 	}
@@ -148,6 +211,26 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 	if wp.msgRepo != nil {
 		if err := wp.msgRepo.UpdateWAMessageID(ctx, message.ID, waMessageID); err != nil {
 			slog.Error("failed to update WA message ID", "error", err, "message_id", message.ID)
+		}
+	}
+
+	if wp.billingRepo != nil && companyID != "" {
+		category := "service"
+		if message.MessageType == "template" {
+			category = "marketing"
+		}
+
+		billingLog := &models.BillingLog{
+			CompanyID:            companyID,
+			ConversationID:       message.ConversationID,
+			MessageID:            message.ID,
+			PhoneNumber:          phone,
+			ConversationCategory: category,
+			CreatedAt:            time.Now().UTC(),
+		}
+
+		if err := wp.billingRepo.Create(ctx, billingLog); err != nil {
+			slog.Error("failed to create billing log", "error", err, "message_id", message.ID)
 		}
 	}
 

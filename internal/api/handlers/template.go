@@ -19,29 +19,29 @@ func NewTemplateHandler(svc *service.TemplateService) *TemplateHandler {
 }
 
 type CreateTemplateRequest struct {
-	Name          string `json:"name"`
-	Language      string `json:"language"`
-	Category      string `json:"category"`
-	Content       string `json:"content"`
-	HeaderType    string `json:"header_type,omitempty"`
-	HeaderContent string `json:"header_content,omitempty"`
-	FooterText    string `json:"footer_text,omitempty"`
-	Buttons       string `json:"buttons,omitempty"`
+	Name           string `json:"name"`
+	Language       string `json:"language"`
+	Category       string `json:"category"`
+	Content        string `json:"content"`
+	HeaderType     string `json:"header_type,omitempty"`
+	HeaderContent  string `json:"header_content,omitempty"`
+	FooterText     string `json:"footer_text,omitempty"`
+	Buttons        string `json:"buttons,omitempty"`
 	BodyComponents string `json:"body_components,omitempty"`
 }
 
 type UpdateTemplateRequest struct {
-	Name          string `json:"name"`
-	Language      string `json:"language"`
-	Category      string `json:"category"`
-	Content       string `json:"content"`
-	HeaderType    string `json:"header_type,omitempty"`
-	HeaderContent string `json:"header_content,omitempty"`
-	FooterText    string `json:"footer_text,omitempty"`
-	Buttons       string `json:"buttons,omitempty"`
+	Name           string `json:"name"`
+	Language       string `json:"language"`
+	Category       string `json:"category"`
+	Content        string `json:"content"`
+	HeaderType     string `json:"header_type,omitempty"`
+	HeaderContent  string `json:"header_content,omitempty"`
+	FooterText     string `json:"footer_text,omitempty"`
+	Buttons        string `json:"buttons,omitempty"`
 	BodyComponents string `json:"body_components,omitempty"`
-	IsVerified    bool   `json:"is_verified"`
-	MetaStatus    string `json:"meta_status,omitempty"`
+	IsVerified     bool   `json:"is_verified"`
+	MetaStatus     string `json:"meta_status,omitempty"`
 }
 
 func (h *TemplateHandler) create(w http.ResponseWriter, r *http.Request) {

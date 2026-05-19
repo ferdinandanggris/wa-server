@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/wa-server/internal/models"
 )
 
 type Client struct {
@@ -48,6 +50,53 @@ type WhatsAppResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// GetConversationAnalytics calls Meta's conversation_analytics endpoint for cost data.
+func (c *Client) GetConversationAnalytics(ctx context.Context, start, end time.Time, granularity string) (*models.ConversationAnalyticsResponse, error) {
+	if granularity == "" {
+		granularity = "DAY"
+	}
+
+	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s", c.APIVersion, c.WABAID)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	q := req.URL.Query()
+	q.Set("fields", "conversation_analytics")
+	q.Set("start", start.Format(time.RFC3339))
+	q.Set("end", end.Format(time.RFC3339))
+	q.Set("granularity", granularity)
+	q.Set("phone_numbers", "[]")
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("WhatsApp API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		ConversationAnalytics *models.ConversationAnalyticsResponse `json:"conversation_analytics"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.ConversationAnalytics == nil {
+		return nil, fmt.Errorf("no conversation_analytics in response")
+	}
+
+	return result.ConversationAnalytics, nil
 }
 
 func (c *Client) SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error) {
