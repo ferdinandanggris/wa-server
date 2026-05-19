@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// User represents an authenticated user within a company.
 type User struct {
 	ID           string    `json:"id"`
 	CompanyID    string    `json:"company_id"`
@@ -18,6 +19,7 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// UserRole defines the role type for authorization.
 type UserRole string
 
 const (
@@ -25,6 +27,7 @@ const (
 	RoleSuperadmin UserRole = "superadmin"
 )
 
+// UserRepository defines persistence operations for users.
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id string) (*User, error)

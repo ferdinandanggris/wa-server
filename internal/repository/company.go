@@ -9,12 +9,15 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// ErrCompanyNotFound is returned when a company record is not found.
 var ErrCompanyNotFound = errors.New("company not found")
 
+// CompanyRepo implements company persistence for PostgreSQL.
 type CompanyRepo struct {
 	db *DB
 }
 
+// NewCompanyRepo creates a new CompanyRepo.
 func NewCompanyRepo(db *DB) *CompanyRepo {
 	return &CompanyRepo{db: db}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,12 +20,18 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	slog.Info("starting WhatsApp Gateway server...")
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	db, err := repository.NewPostgresDB(repository.PostgresConfig{
@@ -38,16 +45,14 @@ func main() {
 		MaxLifetime:  cfg.Database.MaxLifetime,
 	})
 	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer db.Close()
 	slog.Info("connected to database")
 
 	rmq, err := queue.NewRabbitMQ(&cfg.RabbitMQ)
 	if err != nil {
-		slog.Error("failed to connect to RabbitMQ", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to RabbitMQ: %w", err)
 	}
 	defer rmq.Close()
 	slog.Info("connected to RabbitMQ")
@@ -71,15 +76,14 @@ func main() {
 	)
 
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
-	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default", waClient, contactRepo)
+	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
 
 	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, 5)
 	if err := workerPool.Start(); err != nil {
-		slog.Error("failed to start worker pool", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("start worker pool: %w", err)
 	}
-	slog.Info("worker pool started")
 	defer workerPool.Stop()
+	slog.Info("worker pool started")
 
 	mux := http.NewServeMux()
 
@@ -113,19 +117,27 @@ func main() {
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("server starting", "address", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server failed", "error", err)
-			os.Exit(1)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("listen and serve: %w", err)
 		}
+		close(errCh)
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	slog.Info("shutting down server...")
+	select {
+	case sig := <-quit:
+		slog.Info("shutting down server...", "signal", sig)
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -134,4 +146,5 @@ func main() {
 	}
 
 	slog.Info("server exited")
+	return nil
 }

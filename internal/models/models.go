@@ -1,5 +1,6 @@
 package models
 
+// RepositoryList aggregates all repository interfaces for convenient grouping.
 type RepositoryList struct {
 	Company      CompanyRepository
 	User         UserRepository
@@ -11,6 +12,7 @@ type RepositoryList struct {
 	Billing      BillingRepository
 }
 
+// NewRepositoryList creates a RepositoryList with all repository implementations.
 func NewRepositoryList(
 	company CompanyRepository,
 	user UserRepository,

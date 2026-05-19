@@ -23,6 +23,7 @@ type Company struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// CompanyRepository defines persistence operations for companies.
 type CompanyRepository interface {
 	Create(ctx context.Context, company *Company) error
 	GetByID(ctx context.Context, id string) (*Company, error)

@@ -8,13 +8,18 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// ErrUserNotFound is returned when a user record is not found.
 var ErrUserNotFound = errors.New("user not found")
+
+// ErrUserAlreadyExists is returned when attempting to create a duplicate user.
 var ErrUserAlreadyExists = errors.New("user already exists")
 
+// UserRepo implements user persistence for PostgreSQL.
 type UserRepo struct {
 	db *DB
 }
 
+// NewUserRepo creates a new UserRepo.
 func NewUserRepo(db *DB) *UserRepo {
 	return &UserRepo{db: db}
 }

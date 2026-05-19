@@ -12,6 +12,7 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// MessageRepository implements models.MessageRepository for PostgreSQL.
 type MessageRepository struct {
 	db *DB
 }
@@ -23,6 +24,7 @@ func nullJSON(s string) interface{} {
 	return s
 }
 
+// NewMessageRepository creates a new MessageRepository.
 func NewMessageRepository(db *DB) *MessageRepository {
 	return &MessageRepository{db: db}
 }
@@ -236,6 +238,7 @@ func (r *MessageRepository) UpdateWAMessageID(ctx context.Context, id, waMessage
 	return nil
 }
 
+// MessageFilter holds optional filters for the List query.
 type MessageFilter struct {
 	CompanyID      string
 	ConversationID string
@@ -249,29 +252,33 @@ func (r *MessageRepository) List(ctx context.Context, filter MessageFilter, limi
 	conditions := []string{}
 
 	if filter.CompanyID != "" {
-		conditions = append(conditions, `c.company_id = $`+fmt.Sprint(len(args)+1))
 		args = append(args, filter.CompanyID)
+		conditions = append(conditions, `c.company_id = $`+fmt.Sprint(len(args)))
 	}
 
 	if filter.ConversationID != "" {
-		conditions = append(conditions, `m.conversation_id = $`+fmt.Sprint(len(args)+1))
 		args = append(args, filter.ConversationID)
+		conditions = append(conditions, `m.conversation_id = $`+fmt.Sprint(len(args)))
 	}
 
 	if filter.Status != "" {
-		conditions = append(conditions, `m.status = $`+fmt.Sprint(len(args)+1))
 		args = append(args, filter.Status)
+		conditions = append(conditions, `m.status = $`+fmt.Sprint(len(args)))
 	}
 
 	if filter.Direction != "" {
-		conditions = append(conditions, `m.direction = $`+fmt.Sprint(len(args)+1))
 		args = append(args, filter.Direction)
+		conditions = append(conditions, `m.direction = $`+fmt.Sprint(len(args)))
 	}
 
 	whereClause := ""
 	if len(conditions) > 0 {
 		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
+
+	args = append(args, limit, offset)
+	limitIdx := len(args) - 1
+	offsetIdx := len(args)
 
 	query := fmt.Sprintf(`
 		SELECT m.id, m.conversation_id, m.message_id, m.direction, m.message_type,
@@ -283,9 +290,7 @@ func (r *MessageRepository) List(ctx context.Context, filter MessageFilter, limi
 		%s
 		ORDER BY m.created_at DESC
 		LIMIT $%d OFFSET $%d
-	`, whereClause, len(args)+1, len(args)+2)
-
-	args = append(args, limit, offset)
+	`, whereClause, limitIdx, offsetIdx)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

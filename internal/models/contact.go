@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Contact represents a WhatsApp contact associated with a company.
 type Contact struct {
 	ID                string    `json:"id"`
 	CompanyID         string    `json:"company_id"`
@@ -18,6 +19,7 @@ type Contact struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+// ContactRepository defines persistence operations for contacts.
 type ContactRepository interface {
 	Create(ctx context.Context, contact *Contact) error
 	GetByID(ctx context.Context, id string) (*Contact, error)

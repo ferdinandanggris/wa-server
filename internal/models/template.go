@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Template represents a WhatsApp message template.
 type Template struct {
 	ID             string    `json:"id"`
 	WATemplateID   string    `json:"wa_template_id"`
@@ -24,6 +25,7 @@ type Template struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// TemplateCategory represents the category of a WhatsApp template.
 type TemplateCategory string
 
 const (
@@ -32,6 +34,7 @@ const (
 	TemplateCategoryAuthentication TemplateCategory = "authentication"
 )
 
+// TemplateMetaStatus represents the approval status from Meta.
 type TemplateMetaStatus string
 
 const (
@@ -40,6 +43,7 @@ const (
 	TemplateMetaRejected TemplateMetaStatus = "REJECTED"
 )
 
+// TemplateRepository defines persistence operations for templates.
 type TemplateRepository interface {
 	Create(ctx context.Context, tmpl *Template) error
 	GetByID(ctx context.Context, id string) (*Template, error)

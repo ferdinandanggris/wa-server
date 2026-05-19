@@ -8,10 +8,12 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// Publisher sends messages to the RabbitMQ exchange.
 type Publisher struct {
 	rmq *RabbitMQ
 }
 
+// NewPublisher creates a new Publisher using the given RabbitMQ connection.
 func NewPublisher(rmq *RabbitMQ) *Publisher {
 	return &Publisher{rmq: rmq}
 }

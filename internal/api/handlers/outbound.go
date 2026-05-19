@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,31 +9,25 @@ import (
 
 	"github.com/wa-server/internal/models"
 	"github.com/wa-server/internal/queue"
-	"github.com/wa-server/internal/repository"
 )
 
+// OutboundHandler handles outgoing message API requests.
 type OutboundHandler struct {
-	msgRepo     models.MessageRepository
-	queuePub    *queue.Publisher
-	companyID   string
-	waClient    WhatsAppClient
-	contactRepo *repository.ContactRepository
+	msgRepo   models.MessageRepository
+	queuePub  *queue.Publisher
+	companyID string
 }
 
-type WhatsAppClient interface {
-	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
-}
-
-func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string, waClient WhatsAppClient, contactRepo *repository.ContactRepository) *OutboundHandler {
+// NewOutboundHandler creates a new OutboundHandler.
+func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string) *OutboundHandler {
 	return &OutboundHandler{
-		msgRepo:     msgRepo,
-		queuePub:    queuePub,
-		companyID:   companyID,
-		waClient:    waClient,
-		contactRepo: contactRepo,
+		msgRepo:   msgRepo,
+		queuePub:  queuePub,
+		companyID: companyID,
 	}
 }
 
+// SendMessageRequest is the JSON body for sending a message.
 type SendMessageRequest struct {
 	ConversationID string            `json:"conversation_id"`
 	To             string            `json:"to"`
@@ -45,6 +38,7 @@ type SendMessageRequest struct {
 	TemplateParams map[string]string `json:"template_params,omitempty"`
 }
 
+// SendMessageResponse is returned after queuing a message.
 type SendMessageResponse struct {
 	MessageID string `json:"message_id"`
 	Status    string `json:"status"`
@@ -106,30 +100,6 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to create message", "error", err, "conversation_id", msg.ConversationID, "message_id", msg.MessageID, "content", msg.Content)
 		http.Error(w, "failed to create message", http.StatusInternalServerError)
 		return
-	}
-
-	// Direct WhatsApp call for immediate send (bypass worker for testing)
-	if h.waClient != nil && h.contactRepo != nil {
-		phone, err := h.contactRepo.GetPhoneByConversationID(r.Context(), conversationID)
-		if err != nil {
-			slog.Warn("failed to get phone for direct send", "error", err)
-		} else {
-			slog.Info("sending directly to WhatsApp", "phone", phone)
-			waMsgID, sendErr := h.waClient.SendMessage(r.Context(), phone, messageType, req.Content, req.MediaURL)
-			if sendErr != nil {
-				slog.Error("direct WhatsApp send failed", "error", sendErr)
-			} else {
-				slog.Info("direct WhatsApp send success", "wa_message_id", waMsgID)
-				msg.Status = string(models.MessageStatusSent)
-				msg.MessageID = waMsgID
-				if err := h.msgRepo.UpdateStatus(r.Context(), msg.ID, msg.Status); err != nil {
-					slog.Error("failed to update message status", "error", err)
-				}
-				if err := h.msgRepo.UpdateWAMessageID(r.Context(), msg.ID, waMsgID); err != nil {
-					slog.Error("failed to update WA message ID", "error", err)
-				}
-			}
-		}
 	}
 
 	if h.queuePub != nil {

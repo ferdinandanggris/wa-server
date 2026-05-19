@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Message represents a WhatsApp message within a conversation.
 type Message struct {
 	ID             string     `json:"id"`
 	ConversationID string     `json:"conversation_id"`
@@ -24,6 +25,7 @@ type Message struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
+// MessageDirection indicates whether a message is inbound or outbound.
 type MessageDirection string
 
 const (
@@ -31,6 +33,7 @@ const (
 	MessageDirectionOutbound MessageDirection = "outbound"
 )
 
+// MessageType represents the content type of a WhatsApp message.
 type MessageType string
 
 const (
@@ -43,6 +46,7 @@ const (
 	MessageTypeSticker  MessageType = "sticker"
 )
 
+// MessageStatus represents the delivery status of a message.
 type MessageStatus string
 
 const (
@@ -53,6 +57,7 @@ const (
 	MessageStatusFailed    MessageStatus = "failed"
 )
 
+// MessageRepository defines persistence operations for messages.
 type MessageRepository interface {
 	Create(ctx context.Context, msg *Message) error
 	GetByID(ctx context.Context, id string) (*Message, error)

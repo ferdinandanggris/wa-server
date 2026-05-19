@@ -10,11 +10,13 @@ import (
 	"github.com/wa-server/internal/repository"
 )
 
+// WhatsAppClient defines the interface for sending WhatsApp messages.
 type WhatsAppClient interface {
 	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
 	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
 }
 
+// WorkerPool manages concurrent RabbitMQ consumers for message processing.
 type WorkerPool struct {
 	rmq         *RabbitMQ
 	whatsapp    WhatsAppClient
@@ -26,6 +28,7 @@ type WorkerPool struct {
 	cancel      context.CancelFunc
 }
 
+// NewWorkerPool creates a worker pool with the specified number of concurrent workers.
 func NewWorkerPool(rmq *RabbitMQ, whatsapp WhatsAppClient, msgRepo models.MessageRepository, contactRepo *repository.ContactRepository, workers int) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{

@@ -14,22 +14,26 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for now
+		return true
 	},
 }
 
+// WebSocketMessage is the JSON payload sent through WebSocket connections.
 type WebSocketMessage struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 }
 
+// Client represents a single WebSocket connection belonging to a company.
 type Client struct {
 	ID        string
 	CompanyID string
 	Conn      *websocket.Conn
 	Send      chan []byte
+	closeOnce sync.Once
 }
 
+// WebSocketHub manages WebSocket connections grouped by company.
 type WebSocketHub struct {
 	clients    map[string]*Client
 	companyMap map[string]map[string]*Client
@@ -39,11 +43,13 @@ type WebSocketHub struct {
 	mu         sync.RWMutex
 }
 
+// CompanyBroadcast targets a message to all clients of a specific company.
 type CompanyBroadcast struct {
 	CompanyID string
 	Message   WebSocketMessage
 }
 
+// NewWebSocketHub creates and initializes a new WebSocketHub.
 func NewWebSocketHub() *WebSocketHub {
 	return &WebSocketHub{
 		clients:    make(map[string]*Client),
@@ -95,17 +101,18 @@ func (h *WebSocketHub) Run() {
 				select {
 				case client.Send <- data:
 				default:
-					close(client.Send)
 					h.mu.Lock()
 					delete(h.clients, client.ID)
 					delete(h.companyMap[client.CompanyID], client.ID)
 					h.mu.Unlock()
+					close(client.Send)
 				}
 			}
 		}
 	}
 }
 
+// BroadcastToCompany sends a message to all WebSocket clients of a company.
 func (h *WebSocketHub) BroadcastToCompany(companyID string, msg WebSocketMessage) {
 	h.broadcast <- &CompanyBroadcast{
 		CompanyID: companyID,
@@ -113,6 +120,7 @@ func (h *WebSocketHub) BroadcastToCompany(companyID string, msg WebSocketMessage
 	}
 }
 
+// HandleWS upgrades an HTTP connection to WebSocket and registers the client.
 func (h *WebSocketHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("company_id")
 	if companyID == "" {
@@ -143,10 +151,16 @@ func (h *WebSocketHub) unregisterClient(client *Client) {
 	h.unregister <- client
 }
 
+func (c *Client) closeConn() {
+	c.closeOnce.Do(func() {
+		c.Conn.Close()
+	})
+}
+
 func (c *Client) readPump(hub *WebSocketHub) {
 	defer func() {
 		hub.unregisterClient(c)
-		c.Conn.Close()
+		c.closeConn()
 	}()
 
 	c.Conn.SetReadLimit(512)
@@ -169,8 +183,6 @@ func (c *Client) readPump(hub *WebSocketHub) {
 			break
 		}
 
-		// Handle incoming messages if needed
-		// For now, we just log them
 		slog.Debug("received message from client", "client_id", c.ID, "message", string(message))
 	}
 }
@@ -179,7 +191,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(54 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.Conn.Close()
+		c.closeConn()
 	}()
 
 	for {

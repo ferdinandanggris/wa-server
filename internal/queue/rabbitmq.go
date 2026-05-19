@@ -11,6 +11,7 @@ import (
 	"github.com/wa-server/internal/config"
 )
 
+// RabbitMQ constants for exchange, queues, and routing keys.
 const (
 	ExchangeWhatsApp   = "whatsapp"
 	QueueInbound       = "inbound_messages"
@@ -19,6 +20,7 @@ const (
 	RoutingKeyOutbound = "outbound"
 )
 
+// RabbitMQ wraps an amqp connection and channel with reconnection support.
 type RabbitMQ struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
@@ -26,6 +28,7 @@ type RabbitMQ struct {
 	mu      sync.Mutex
 }
 
+// NewRabbitMQ connects to RabbitMQ and sets up the exchange and queues.
 func NewRabbitMQ(cfg *config.RabbitMQConfig) (*RabbitMQ, error) {
 	conn, err := amqp.Dial(cfg.URL())
 	if err != nil {

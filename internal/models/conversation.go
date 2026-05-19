@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Conversation represents a chat session between a company and a contact.
 type Conversation struct {
 	ID                    string     `json:"id"`
 	CompanyID             string     `json:"company_id"`
@@ -22,6 +23,7 @@ type Conversation struct {
 	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
+// ConversationStatus represents the current state of a conversation.
 type ConversationStatus string
 
 const (
@@ -31,6 +33,7 @@ const (
 	ConversationStatusEscalated ConversationStatus = "escalated"
 )
 
+// ConversationRepository defines persistence operations for conversations.
 type ConversationRepository interface {
 	Create(ctx context.Context, conv *Conversation) error
 	GetByID(ctx context.Context, id string) (*Conversation, error)

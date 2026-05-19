@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Agent represents a customer service agent within a company.
 type Agent struct {
 	ID                 string    `json:"id"`
 	CompanyID          string    `json:"company_id"`
@@ -17,6 +18,7 @@ type Agent struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
+// AgentStatus represents the availability status of an agent.
 type AgentStatus string
 
 const (
@@ -26,6 +28,7 @@ const (
 	AgentStatusAway    AgentStatus = "away"
 )
 
+// AgentRepository defines persistence operations for agents.
 type AgentRepository interface {
 	Create(ctx context.Context, agent *Agent) error
 	GetByID(ctx context.Context, id string) (*Agent, error)

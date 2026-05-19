@@ -13,6 +13,7 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// WhatsAppHandler processes incoming WhatsApp webhook events.
 type WhatsAppHandler struct {
 	cfg          *config.Config
 	msgRepo      models.MessageRepository
@@ -22,11 +23,13 @@ type WhatsAppHandler struct {
 	wsHub        *WebSocketHub
 }
 
+// MessagePublisher sends messages to the RabbitMQ exchange for async processing.
 type MessagePublisher interface {
 	PublishInbound(ctx context.Context, msg *models.Message) error
 	PublishOutbound(ctx context.Context, msg *models.Message) error
 }
 
+// NewWhatsAppHandler creates a new WhatsAppHandler.
 func NewWhatsAppHandler(
 	cfg *config.Config,
 	msgRepo models.MessageRepository,

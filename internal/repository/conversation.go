@@ -8,10 +8,12 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// ConversationRepository implements conversation persistence for PostgreSQL.
 type ConversationRepository struct {
 	db *DB
 }
 
+// NewConversationRepository creates a new ConversationRepository.
 func NewConversationRepository(db *DB) *ConversationRepository {
 	return &ConversationRepository{db: db}
 }

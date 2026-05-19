@@ -8,10 +8,12 @@ import (
 	"github.com/wa-server/internal/models"
 )
 
+// ContactRepository implements models.ContactRepository for PostgreSQL.
 type ContactRepository struct {
 	db *DB
 }
 
+// NewContactRepository creates a new ContactRepository.
 func NewContactRepository(db *DB) *ContactRepository {
 	return &ContactRepository{db: db}
 }
