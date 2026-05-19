@@ -18,6 +18,7 @@ type Message struct {
 	MediaURL       string     `json:"media_url,omitempty"`
 	Status         string     `json:"status"`
 	WAStatus       string     `json:"wa_status,omitempty"`
+	IdempotencyKey string     `json:"idempotency_key,omitempty"`
 	SentAt         *time.Time `json:"sent_at,omitempty"`
 	DeliveredAt    *time.Time `json:"delivered_at,omitempty"`
 	ReadAt         *time.Time `json:"read_at,omitempty"`
@@ -62,6 +63,7 @@ type MessageRepository interface {
 	Create(ctx context.Context, msg *Message) error
 	GetByID(ctx context.Context, id string) (*Message, error)
 	GetByMessageID(ctx context.Context, messageID string) (*Message, error)
+	GetByIdempotencyKey(ctx context.Context, key string) (*Message, error)
 	GetByConversationID(ctx context.Context, convID string, limit, offset int) ([]Message, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
 	UpdateDeliveryStatus(ctx context.Context, id, status string, timestamp time.Time) error

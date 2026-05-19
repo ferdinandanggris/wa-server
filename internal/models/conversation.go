@@ -10,6 +10,7 @@ type Conversation struct {
 	ID                    string     `json:"id"`
 	CompanyID             string     `json:"company_id"`
 	ContactID             string     `json:"contact_id"`
+	PhoneNumber           string     `json:"phone_number,omitempty"`
 	AssignedAgentID       string     `json:"assigned_agent_id,omitempty"`
 	Status                string     `json:"status"`
 	LastCustomerMessageAt *time.Time `json:"last_customer_message_at,omitempty"`
@@ -39,6 +40,7 @@ type ConversationRepository interface {
 	GetByID(ctx context.Context, id string) (*Conversation, error)
 	GetByIDWithCompany(ctx context.Context, id string) (*Conversation, error)
 	GetByContactID(ctx context.Context, companyID, contactID string) (*Conversation, error)
+	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*Conversation, error)
 	Update(ctx context.Context, conv *Conversation) error
 	Update24hWindow(ctx context.Context, id string, isActive bool, lastMessageAt time.Time) error
 	AssignAgent(ctx context.Context, id, agentID string) error

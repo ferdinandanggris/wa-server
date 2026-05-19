@@ -13,7 +13,10 @@ import (
 
 type WhatsAppClient interface {
 	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
+	SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL string) (string, error)
 	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
+	SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error)
+	GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
 }
 
 // CompanyRepoForWorker isolates company methods needed by the worker.
@@ -33,19 +36,24 @@ type ConversationRepoForWorker interface {
 	GetByID(ctx context.Context, id string) (*models.Conversation, error)
 }
 
+type PhoneNumberRepoForWorker interface {
+	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.PhoneNumber, error)
+}
+
 // WorkerPool manages concurrent RabbitMQ consumers for message processing.
 type WorkerPool struct {
-	rmq         *RabbitMQ
-	whatsapp    WhatsAppClient
-	msgRepo     models.MessageRepository
-	contactRepo *repository.ContactRepository
-	companyRepo CompanyRepoForWorker
-	billingRepo BillingRepoForWorker
-	convRepo    ConversationRepoForWorker
-	workers     int
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
+	rmq             *RabbitMQ
+	whatsapp        WhatsAppClient
+	msgRepo         models.MessageRepository
+	contactRepo     *repository.ContactRepository
+	companyRepo     CompanyRepoForWorker
+	billingRepo     BillingRepoForWorker
+	convRepo        ConversationRepoForWorker
+	phoneNumberRepo PhoneNumberRepoForWorker
+	workers         int
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // NewWorkerPool creates a worker pool with the specified number of concurrent workers.
@@ -57,20 +65,22 @@ func NewWorkerPool(
 	companyRepo CompanyRepoForWorker,
 	billingRepo BillingRepoForWorker,
 	convRepo ConversationRepoForWorker,
+	phoneNumberRepo PhoneNumberRepoForWorker,
 	workers int,
 ) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
-		rmq:         rmq,
-		whatsapp:    whatsapp,
-		msgRepo:     msgRepo,
-		contactRepo: contactRepo,
-		companyRepo: companyRepo,
-		billingRepo: billingRepo,
-		convRepo:    convRepo,
-		workers:     workers,
-		ctx:         ctx,
-		cancel:      cancel,
+		rmq:             rmq,
+		whatsapp:        whatsapp,
+		msgRepo:         msgRepo,
+		contactRepo:     contactRepo,
+		companyRepo:     companyRepo,
+		billingRepo:     billingRepo,
+		convRepo:        convRepo,
+		phoneNumberRepo: phoneNumberRepo,
+		workers:         workers,
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -162,14 +172,14 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 	slog.Info("resolved phone number", "phone", phone)
 
-	conv, err := wp.convRepo.GetByID(ctx, message.ConversationID)
+	pn, err := wp.phoneNumberRepo.GetByPhoneNumber(ctx, phone)
 	if err != nil {
-		slog.Error("failed to get conversation", "error", err, "conversation_id", message.ConversationID)
-		wp.failMessage(ctx, message.ID, "conversation not found")
+		slog.Error("failed to get phone number record", "error", err, "phone", phone)
+		wp.failMessage(ctx, message.ID, "phone number not registered")
 		return
 	}
 
-	companyID := conv.CompanyID
+	companyID := pn.CompanyID
 
 	if wp.companyRepo != nil && companyID != "" {
 		ok, err := wp.companyRepo.TryIncrementQuota(ctx, companyID, 1)
@@ -190,9 +200,9 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 
 	if message.MessageType == "template" {
 		params := parseTemplateParams(message.TemplateParams)
-		waMessageID, sendErr = wp.whatsapp.SendTemplateMessage(ctx, phone, message.TemplateID, params)
+		waMessageID, sendErr = wp.whatsapp.SendTemplateMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.TemplateID, params)
 	} else {
-		waMessageID, sendErr = wp.whatsapp.SendMessage(ctx, phone, message.MessageType, message.Content, message.MediaURL)
+		waMessageID, sendErr = wp.whatsapp.SendMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.MessageType, message.Content, message.MediaURL)
 	}
 
 	if sendErr != nil {
@@ -214,7 +224,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte) {
 		}
 	}
 
-	if wp.billingRepo != nil && companyID != "" {
+	if wp.billingRepo != nil {
 		category := "service"
 		if message.MessageType == "template" {
 			category = "marketing"

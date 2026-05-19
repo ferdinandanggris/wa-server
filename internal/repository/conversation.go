@@ -51,12 +51,17 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		assignedAgentID = conv.AssignedAgentID
 	}
 
+	var phoneNumber interface{}
+	if conv.PhoneNumber != "" {
+		phoneNumber = conv.PhoneNumber
+	}
+
 	query := `
 		INSERT INTO conversations (
 			id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
-		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -70,6 +75,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		conv.Is24hWindowActive,
 		conv.UnreadCount,
 		conv.LastMessagePreview,
+		phoneNumber,
 		conv.StartedAt,
 		conv.ClosedAt,
 		conv.CreatedAt,
@@ -83,7 +89,7 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*model
 	query := `
 		SELECT id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
 		FROM conversations WHERE id = $1
 	`
 
@@ -99,6 +105,7 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*model
 		&conv.Is24hWindowActive,
 		&conv.UnreadCount,
 		&conv.LastMessagePreview,
+		&conv.PhoneNumber,
 		&conv.StartedAt,
 		&conv.ClosedAt,
 		&conv.CreatedAt,
@@ -115,11 +122,47 @@ func (r *ConversationRepository) GetByIDWithCompany(ctx context.Context, id stri
 	return r.GetByID(ctx, id)
 }
 
+func (r *ConversationRepository) GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.Conversation, error) {
+	query := `
+		SELECT id, company_id, contact_id, assigned_agent_id, status,
+			last_customer_message_at, last_agent_message_at, is_24h_window_active,
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
+		FROM conversations
+		WHERE phone_number = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var conv models.Conversation
+	err := r.db.QueryRowContext(ctx, query, phoneNumber).Scan(
+		&conv.ID,
+		&conv.CompanyID,
+		&conv.ContactID,
+		&conv.AssignedAgentID,
+		&conv.Status,
+		&conv.LastCustomerMessageAt,
+		&conv.LastAgentMessageAt,
+		&conv.Is24hWindowActive,
+		&conv.UnreadCount,
+		&conv.LastMessagePreview,
+		&conv.PhoneNumber,
+		&conv.StartedAt,
+		&conv.ClosedAt,
+		&conv.CreatedAt,
+		&conv.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	return &conv, nil
+}
+
 func (r *ConversationRepository) GetByContactID(ctx context.Context, companyID, contactID string) (*models.Conversation, error) {
 	query := `
 		SELECT id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
 		FROM conversations
 		WHERE company_id = $1 AND contact_id = $2
 		ORDER BY created_at DESC
@@ -138,6 +181,7 @@ func (r *ConversationRepository) GetByContactID(ctx context.Context, companyID, 
 		&conv.Is24hWindowActive,
 		&conv.UnreadCount,
 		&conv.LastMessagePreview,
+		&conv.PhoneNumber,
 		&conv.StartedAt,
 		&conv.ClosedAt,
 		&conv.CreatedAt,
@@ -252,7 +296,7 @@ func (r *ConversationRepository) ListByCompany(ctx context.Context, companyID st
 	query := `
 		SELECT id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
 		FROM conversations
 		WHERE company_id = $1
 		ORDER BY created_at DESC
@@ -297,7 +341,7 @@ func (r *ConversationRepository) ListByAgent(ctx context.Context, agentID string
 	query := `
 		SELECT id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
 		FROM conversations
 		WHERE assigned_agent_id = $1
 		ORDER BY last_customer_message_at DESC
@@ -341,7 +385,7 @@ func (r *ConversationRepository) ListOpen(ctx context.Context, companyID string)
 	query := `
 		SELECT id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, started_at, closed_at, created_at, updated_at
+			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
 		FROM conversations
 		WHERE company_id = $1 AND status IN ('open', 'assigned', 'escalated')
 		ORDER BY last_customer_message_at DESC

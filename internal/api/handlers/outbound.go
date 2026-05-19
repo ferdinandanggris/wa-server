@@ -36,6 +36,7 @@ type SendMessageRequest struct {
 	MediaURL       string            `json:"media_url,omitempty"`
 	TemplateID     string            `json:"template_id,omitempty"`
 	TemplateParams map[string]string `json:"template_params,omitempty"`
+	IdempotencyKey string            `json:"idempotency_key,omitempty"`
 }
 
 // SendMessageResponse is returned after queuing a message.
@@ -60,6 +61,19 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if req.ConversationID == "" && req.To == "" {
 		http.Error(w, "conversation_id or to is required", http.StatusBadRequest)
 		return
+	}
+
+	if req.IdempotencyKey != "" {
+		existing, err := h.msgRepo.GetByIdempotencyKey(r.Context(), req.IdempotencyKey)
+		if err == nil && existing != nil {
+			slog.Info("idempotent request, returning existing message", "idempotency_key", req.IdempotencyKey, "message_id", existing.ID)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(SendMessageResponse{
+				MessageID: existing.ID,
+				Status:    existing.Status,
+			})
+			return
+		}
 	}
 
 	messageType := req.MessageType
@@ -93,6 +107,7 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		TemplateID:     req.TemplateID,
 		TemplateParams: paramsJSON,
 		Status:         string(models.MessageStatusPending),
+		IdempotencyKey: req.IdempotencyKey,
 		CreatedAt:      time.Now().UTC(),
 	}
 

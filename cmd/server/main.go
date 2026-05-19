@@ -64,6 +64,7 @@ func run() error {
 	templateRepo := repository.NewTemplateRepo(db)
 	companyRepo := repository.NewCompanyRepo(db)
 	billingRepo := repository.NewBillingRepository(db)
+	phoneNumberRepo := repository.NewPhoneNumberRepository(db)
 
 	publisher := queue.NewPublisher(rmq)
 
@@ -83,11 +84,16 @@ func run() error {
 	waClient := whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.WABAID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.APIVersion)
 	templateSvc := service.NewTemplateService(templateRepo, waClient)
 	billingSvc := service.NewBillingService(billingRepo, companyRepo, waClient)
+	phoneNumberSvc := service.NewPhoneNumberService(phoneNumberRepo, convRepo, waClient)
+	pricingRepo := repository.NewPricingRepository(db)
+	pricingSvc := service.NewPricingService(pricingRepo, phoneNumberRepo, waClient, cfg.WhatsApp.WABAID)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 	billingHandler := handlers.NewBillingHandler(billingSvc)
+	phoneNumberHandler := handlers.NewPhoneNumberHandler(phoneNumberSvc)
+	pricingHandler := handlers.NewPricingHandler(pricingSvc)
 
-	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, 5)
+	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, phoneNumberRepo, 5)
 	if err := workerPool.Start(); err != nil {
 		return fmt.Errorf("start worker pool: %w", err)
 	}
@@ -111,6 +117,8 @@ func run() error {
 	outboundHandler.RegisterRoutes(mux)
 	templateHandler.RegisterRoutes(mux)
 	billingHandler.RegisterRoutes(mux)
+	phoneNumberHandler.RegisterRoutes(mux)
+	pricingHandler.RegisterRoutes(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -131,7 +139,7 @@ func run() error {
 	billingCtx, billingCancel := context.WithCancel(context.Background())
 	defer billingCancel()
 	go func() {
-		slog.Info("starting periodic billing sync", "interval", cfg.Billing.SyncInterval)
+		slog.Info("starting periodic sync", "interval", cfg.Billing.SyncInterval)
 		ticker := time.NewTicker(cfg.Billing.SyncInterval)
 		defer ticker.Stop()
 		for {
@@ -141,6 +149,15 @@ func run() error {
 			case <-ticker.C:
 				end := time.Now()
 				start := end.Add(-7 * 24 * time.Hour)
+
+				if _, err := phoneNumberSvc.SyncFromMeta(context.Background()); err != nil {
+					slog.Error("periodic phone number sync failed", "error", err)
+				}
+
+				if _, err := pricingSvc.SyncFromMeta(context.Background()); err != nil {
+					slog.Error("periodic pricing sync failed", "error", err)
+				}
+
 				if _, err := billingSvc.SyncCostsFromMeta(context.Background(), start, end); err != nil {
 					slog.Error("periodic billing sync failed", "error", err)
 				}

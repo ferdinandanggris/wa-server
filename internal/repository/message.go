@@ -50,12 +50,17 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		templateID = &msg.TemplateID
 	}
 
+	var idempotencyKey interface{}
+	if msg.IdempotencyKey != "" {
+		idempotencyKey = msg.IdempotencyKey
+	}
+
 	query := `
 		INSERT INTO messages (
 			id, conversation_id, message_id, direction, message_type,
 			content, template_id, template_params, media_url, status,
-			wa_status, sent_at, delivered_at, read_at, error_message, created_at
-		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			wa_status, sent_at, delivered_at, read_at, error_message, created_at, idempotency_key
+		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -75,6 +80,7 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		msg.ReadAt,
 		msg.ErrorMessage,
 		msg.CreatedAt,
+		idempotencyKey,
 	)
 
 	if err != nil {
@@ -103,6 +109,7 @@ func scanMessage(row interface{ Scan(dest ...any) error }) (*models.Message, err
 		&msg.ReadAt,
 		&msg.ErrorMessage,
 		&msg.CreatedAt,
+		&msg.IdempotencyKey,
 	)
 	if err != nil {
 		return nil, err
@@ -115,7 +122,8 @@ func (r *MessageRepository) GetByID(ctx context.Context, id string) (*models.Mes
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at
+			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, '')
 		FROM messages WHERE id = $1
 	`
 
@@ -127,11 +135,25 @@ func (r *MessageRepository) GetByMessageID(ctx context.Context, messageID string
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at
+			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, '')
 		FROM messages WHERE message_id = $1
 	`
 
 	return scanMessage(r.db.QueryRowContext(ctx, query, messageID))
+}
+
+func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, key string) (*models.Message, error) {
+	query := `
+		SELECT id, conversation_id, message_id, direction, message_type,
+			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
+			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
+			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, '')
+		FROM messages WHERE idempotency_key = $1
+	`
+
+	return scanMessage(r.db.QueryRowContext(ctx, query, key))
 }
 
 func (r *MessageRepository) GetByConversationID(ctx context.Context, convID string, limit, offset int) ([]models.Message, error) {
@@ -139,7 +161,8 @@ func (r *MessageRepository) GetByConversationID(ctx context.Context, convID stri
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at
+			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, '')
 		FROM messages
 		WHERE conversation_id = $1
 		ORDER BY created_at ASC
@@ -284,7 +307,8 @@ func (r *MessageRepository) List(ctx context.Context, filter MessageFilter, limi
 		SELECT m.id, m.conversation_id, m.message_id, m.direction, m.message_type,
 			COALESCE(m.content, ''), COALESCE(m.template_id::TEXT, ''), COALESCE(m.template_params::TEXT, ''),
 			COALESCE(m.media_url, ''), m.status, COALESCE(m.wa_status, ''),
-			m.sent_at, m.delivered_at, m.read_at, COALESCE(m.error_message, ''), m.created_at
+			m.sent_at, m.delivered_at, m.read_at, COALESCE(m.error_message, ''), m.created_at,
+			COALESCE(m.idempotency_key, '')
 		FROM messages m
 		JOIN conversations c ON m.conversation_id = c.id
 		%s

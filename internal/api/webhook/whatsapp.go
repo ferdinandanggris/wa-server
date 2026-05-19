@@ -160,6 +160,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 			ID:                    "",
 			CompanyID:             companyID,
 			ContactID:             contact.ID,
+			PhoneNumber:           phoneNumber,
 			Status:                string(models.ConversationStatusOpen),
 			Is24hWindowActive:     true,
 			UnreadCount:           1,
@@ -183,6 +184,12 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 		if err := h.convRepo.Update(ctx, conv); err != nil {
 			slog.Error("failed to update conversation", "error", err, "conversation_id", conv.ID)
 		}
+	}
+
+	existingMsg, _ := h.msgRepo.GetByMessageID(ctx, msg.ID)
+	if existingMsg != nil {
+		slog.Info("duplicate inbound message, skipping", "meta_message_id", msg.ID)
+		return
 	}
 
 	messageType := parseMessageType(msg.Type)
