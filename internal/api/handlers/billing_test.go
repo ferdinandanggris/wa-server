@@ -52,11 +52,12 @@ func TestBillingHandler_GetQuota(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 
-	if body["company_id"] != "c1" {
-		t.Fatalf("company_id = %v, want c1", body["company_id"])
+	data := body["data"].(map[string]interface{})
+	if data["company_id"] != "c1" {
+		t.Fatalf("company_id = %v, want c1", data["company_id"])
 	}
-	if body["remaining"] != 950.0 {
-		t.Fatalf("remaining = %v, want 950", body["remaining"])
+	if data["remaining"] != 950.0 {
+		t.Fatalf("remaining = %v, want 950", data["remaining"])
 	}
 }
 
@@ -112,10 +113,13 @@ func TestBillingHandler_GetUsage(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 
-	var logs []models.BillingLog
-	json.NewDecoder(resp.Body).Decode(&logs)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 
+	logsJson, _ := json.Marshal(body["data"])
+	var logs []models.BillingLog
+	json.Unmarshal(logsJson, &logs)
 	if len(logs) != 1 || logs[0].ID != "bl1" {
 		t.Fatalf("got %+v", logs)
 	}
@@ -156,8 +160,9 @@ func TestBillingHandler_SyncCosts(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 
-	if body["updated"] != 5.0 {
-		t.Fatalf("updated = %v, want 5", body["updated"])
+	data := body["data"].(map[string]interface{})
+	if data["updated"] != 5.0 {
+		t.Fatalf("updated = %v, want 5", data["updated"])
 	}
 }
 
@@ -213,10 +218,13 @@ func TestBillingHandler_GetCostSummary(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 
-	var summary []models.BillingCostSummary
-	json.NewDecoder(resp.Body).Decode(&summary)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
 
+	summaryJson, _ := json.Marshal(body["data"])
+	var summary []models.BillingCostSummary
+	json.Unmarshal(summaryJson, &summary)
 	if len(summary) != 1 || summary[0].TotalCost != 0.50 {
 		t.Fatalf("got %+v", summary)
 	}

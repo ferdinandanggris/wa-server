@@ -2,21 +2,22 @@ package models
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
 // User represents an authenticated user within a company.
 type User struct {
-	ID           string    `json:"id"`
-	CompanyID    string    `json:"company_id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"`
-	Name         string    `json:"name"`
-	Role         string    `json:"role"`
-	IsActive     bool      `json:"is_active"`
-	LastLoginAt  time.Time `json:"last_login_at,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string         `json:"id"`
+	CompanyID    string         `json:"company_id"`
+	Email        string         `json:"email"`
+	PasswordHash string         `json:"-"`
+	Name         string         `json:"name"`
+	Role         string         `json:"role"`
+	IsActive     bool           `json:"is_active"`
+	LastLoginAt  sql.NullTime   `json:"last_login_at,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
 }
 
 // UserRole defines the role type for authorization.

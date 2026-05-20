@@ -17,6 +17,7 @@ type UserService interface {
 	Create(ctx context.Context, input service.CreateUserInput) (*models.User, error)
 	GetByID(ctx context.Context, id string) (*models.User, error)
 	ListByCompany(ctx context.Context, companyID string) ([]models.User, error)
+	ListAll(ctx context.Context) ([]models.User, error)
 	Update(ctx context.Context, input service.UpdateUserInput) (*models.User, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -158,7 +159,14 @@ func (h *UserHandler) listUsers(w http.ResponseWriter, r *http.Request) {
 		companyID = r.URL.Query().Get("company_id")
 	}
 
-	users, err := h.svc.ListByCompany(r.Context(), companyID)
+	var users []models.User
+	var err error
+
+	if companyID == "" && claims.Role == string(models.RoleSuperadmin) {
+		users, err = h.svc.ListAll(r.Context())
+	} else {
+		users, err = h.svc.ListByCompany(r.Context(), companyID)
+	}
 	if err != nil {
 		slog.Error("failed to list users", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{

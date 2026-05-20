@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -47,8 +48,8 @@ func (s *CompanyService) Create(ctx context.Context, input CreateCompanyInput) (
 		ID:          uuid.New().String(),
 		Name:        input.Name,
 		Code:        input.Code,
-		PhoneNumber: input.PhoneNumber,
-		Address:     input.Address,
+		PhoneNumber: toNullString(input.PhoneNumber),
+		Address:     toNullString(input.Address),
 		IsActive:    true,
 		QuotaLimit:  input.QuotaLimit,
 		QuotaUsed:   0,
@@ -97,10 +98,10 @@ func (s *CompanyService) Update(ctx context.Context, input UpdateCompanyInput) (
 		company.Name = *input.Name
 	}
 	if input.PhoneNumber != nil {
-		company.PhoneNumber = *input.PhoneNumber
+		company.PhoneNumber = toNullStringPtr(input.PhoneNumber)
 	}
 	if input.Address != nil {
-		company.Address = *input.Address
+		company.Address = toNullStringPtr(input.Address)
 	}
 	if input.IsActive != nil {
 		company.IsActive = *input.IsActive
@@ -118,4 +119,18 @@ func (s *CompanyService) Update(ctx context.Context, input UpdateCompanyInput) (
 
 func (s *CompanyService) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
+}
+
+func toNullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{Valid: false}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+func toNullStringPtr(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{Valid: false}
+	}
+	return toNullString(*s)
 }

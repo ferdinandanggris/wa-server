@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/wa-server/internal/models"
 )
@@ -76,6 +77,8 @@ func (r *UserRepo) GetByID(ctx context.Context, id string) (*models.User, error)
 }
 
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*models.User, error) {
+	slog.Info("GetByEmail called", "email", email)
+	
 	query := `
 		SELECT id, company_id, email, password_hash, name, role, is_active, last_login_at, created_at, updated_at
 		FROM users
@@ -96,6 +99,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*models.User, 
 		&user.UpdatedAt,
 	)
 	if err != nil {
+		slog.Error("GetByEmail SQL error", "email", email, "error", err, "error_type", fmt.Sprintf("%T", err))
 		return nil, ErrUserNotFound
 	}
 
@@ -113,6 +117,42 @@ func (r *UserRepo) GetByCompanyID(ctx context.Context, companyID string) ([]mode
 	rows, err := r.db.QueryContext(ctx, query, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(
+			&user.ID,
+			&user.CompanyID,
+			&user.Email,
+			&user.PasswordHash,
+			&user.Name,
+			&user.Role,
+			&user.IsActive,
+			&user.LastLoginAt,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
+func (r *UserRepo) ListAll(ctx context.Context) ([]models.User, error) {
+	query := `
+		SELECT id, company_id, email, password_hash, name, role, is_active, last_login_at, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all users: %w", err)
 	}
 	defer rows.Close()
 

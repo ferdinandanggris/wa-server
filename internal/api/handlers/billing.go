@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -31,7 +30,9 @@ func NewBillingHandler(svc BillingService) *BillingHandler {
 func (h *BillingHandler) getUsage(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("company_id")
 	if companyID == "" {
-		http.Error(w, "company_id is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "VALIDATION_ERROR", "message": "company_id is required"},
+		})
 		return
 	}
 
@@ -55,40 +56,51 @@ func (h *BillingHandler) getUsage(w http.ResponseWriter, r *http.Request) {
 	logs, err := h.svc.GetUsage(r.Context(), companyID, start, end)
 	if err != nil {
 		slog.Error("failed to get usage", "error", err)
-		http.Error(w, "failed to get usage", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "INTERNAL_ERROR", "message": "failed to get usage"},
+		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(logs)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "data": logs,
+	})
 }
 
 func (h *BillingHandler) getQuota(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("company_id")
 	if companyID == "" {
-		http.Error(w, "company_id is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "VALIDATION_ERROR", "message": "company_id is required"},
+		})
 		return
 	}
 
 	company, err := h.svc.GetQuota(r.Context(), companyID)
 	if err != nil {
 		slog.Error("failed to get quota", "error", err)
-		http.Error(w, "company not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "NOT_FOUND", "message": "company not found"},
+		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"company_id":  company.ID,
-		"quota_limit": company.QuotaLimit,
-		"quota_used":  company.QuotaUsed,
-		"remaining":   company.QuotaLimit - company.QuotaUsed,
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true,
+		"data": map[string]interface{}{
+			"company_id":  company.ID,
+			"quota_limit": company.QuotaLimit,
+			"quota_used":  company.QuotaUsed,
+			"remaining":   company.QuotaLimit - company.QuotaUsed,
+		},
 	})
 }
 
 func (h *BillingHandler) syncCosts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "METHOD_NOT_ALLOWED", "message": "method not allowed"},
+		})
 		return
 	}
 
@@ -112,14 +124,18 @@ func (h *BillingHandler) syncCosts(w http.ResponseWriter, r *http.Request) {
 	updated, err := h.svc.SyncCostsFromMeta(r.Context(), start, end)
 	if err != nil {
 		slog.Error("failed to sync costs", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "INTERNAL_ERROR", "message": err.Error()},
+		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "cost sync completed",
-		"updated": updated,
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true,
+		"data": map[string]interface{}{
+			"message": "cost sync completed",
+			"updated": updated,
+		},
 	})
 }
 
@@ -144,12 +160,15 @@ func (h *BillingHandler) getCostSummary(w http.ResponseWriter, r *http.Request) 
 	summary, err := h.svc.GetCostSummary(r.Context(), start, end)
 	if err != nil {
 		slog.Error("failed to get cost summary", "error", err)
-		http.Error(w, "failed to get cost summary", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "INTERNAL_ERROR", "message": "failed to get cost summary"},
+		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summary)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "data": summary,
+	})
 }
 
 func (h *BillingHandler) RegisterRoutes(mux *http.ServeMux) {

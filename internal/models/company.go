@@ -5,22 +5,23 @@ package models
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
 // Company represents a multi-tenant company in the WhatsApp gateway system.
 // Each company has its own quota limit and is isolated by company_id in all queries.
 type Company struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Code        string    `json:"code"`
-	PhoneNumber string    `json:"phone_number,omitempty"`
-	Address     string    `json:"address,omitempty"`
-	IsActive    bool      `json:"is_active"`
-	QuotaLimit  int       `json:"quota_limit"`
-	QuotaUsed   int       `json:"quota_used"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Code        string        `json:"code"`
+	PhoneNumber sql.NullString `json:"phone_number,omitempty"`
+	Address     sql.NullString `json:"address,omitempty"`
+	IsActive    bool          `json:"is_active"`
+	QuotaLimit  int           `json:"quota_limit"`
+	QuotaUsed   int           `json:"quota_used"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 }
 
 // CompanyRepository defines persistence operations for companies.

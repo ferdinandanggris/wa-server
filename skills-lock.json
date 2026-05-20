@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "dotnet-winforms-basics": {
+      "source": "wshaddix/dotnet-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dotnet-winforms-basics/SKILL.md",
+      "computedHash": "bc09eb1f8a97377bbfd681137d7ed412b6476892ab06df26c88bc0b1244e42e6"
+    }
+  }
+}

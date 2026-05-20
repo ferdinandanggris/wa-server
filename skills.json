@@ -1,0 +1,16 @@
+{
+  "skills": {
+    "dotnet-framework": {
+      "source": "local",
+      "skillPath": "./agent/skills/dotnet-framework/SKILL.md"
+    },
+    "winforms-mvp-reviewer": {
+      "source": "local",
+      "skillPath": "./agent/skills/winforms-mvp-reviewer/SKILL.md"
+    },
+    "winform-ui-pattern": {
+      "source": "local",
+      "skillPath": "./agent/skills/winform-ui-pattern/SKILL.md"
+    }
+  }
+}

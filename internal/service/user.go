@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*models.User, error)
 	GetByEmail(ctx context.Context, email string) (*models.User, error)
 	GetByCompanyID(ctx context.Context, companyID string) ([]models.User, error)
+	ListAll(ctx context.Context) ([]models.User, error)
 	Update(ctx context.Context, user *models.User) error
 	Delete(ctx context.Context, id string) error
 }
@@ -35,16 +37,24 @@ type LoginResponse struct {
 }
 
 func (s *UserService) Login(ctx context.Context, email, password string) (*LoginResponse, error) {
+	slog.Info("login attempt", "email", email)
+	
 	user, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
+		slog.Error("user not found", "email", email, "error", err)
 		return nil, fmt.Errorf("invalid email or password")
 	}
+
+	slog.Info("user found", "email", email, "hash", user.PasswordHash[:20], "active", user.IsActive)
 
 	if !user.IsActive {
 		return nil, fmt.Errorf("account is disabled")
 	}
 
-	if !auth.CheckPassword(password, user.PasswordHash) {
+	passwordValid := auth.CheckPassword(password, user.PasswordHash)
+	slog.Info("password check", "result", passwordValid)
+
+	if !passwordValid {
 		return nil, fmt.Errorf("invalid email or password")
 	}
 
@@ -111,6 +121,17 @@ func (s *UserService) GetByID(ctx context.Context, id string) (*models.User, err
 
 func (s *UserService) ListByCompany(ctx context.Context, companyID string) ([]models.User, error) {
 	users, err := s.repo.GetByCompanyID(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range users {
+		users[i].PasswordHash = ""
+	}
+	return users, nil
+}
+
+func (s *UserService) ListAll(ctx context.Context) ([]models.User, error) {
+	users, err := s.repo.ListAll(ctx)
 	if err != nil {
 		return nil, err
 	}
