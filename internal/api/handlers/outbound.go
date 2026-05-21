@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,9 +34,20 @@ type SendMessageRequest struct {
 	To             string            `json:"to"`
 	MessageType    string            `json:"message_type"`
 	Content        string            `json:"content"`
+	SenderName     string            `json:"sender_name,omitempty"`
 	MediaURL       string            `json:"media_url,omitempty"`
+	MediaID        string            `json:"media_id,omitempty"`
+	FileName       string            `json:"file_name,omitempty"`
 	TemplateID     string            `json:"template_id,omitempty"`
 	TemplateParams map[string]string `json:"template_params,omitempty"`
+	TemplateName   string            `json:"template_name,omitempty"`
+	LanguageCode   string            `json:"language_code,omitempty"`
+	BodyParams     []string          `json:"body_params,omitempty"`
+	ButtonParams   []string          `json:"button_params,omitempty"`
+	HeaderParams   []string          `json:"header_params,omitempty"`
+	ReactionEmoji  string            `json:"reaction_emoji,omitempty"`
+	ReactionToMsg  string            `json:"reaction_to_message_id,omitempty"`
+	ContextMsgID   string            `json:"context_message_id,omitempty"`
 	IdempotencyKey string            `json:"idempotency_key,omitempty"`
 }
 
@@ -47,19 +59,19 @@ type SendMessageResponse struct {
 
 func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "error": "method not allowed"})
 		return
 	}
 
 	var req SendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
 		return
 	}
 	defer r.Body.Close()
 
 	if req.ConversationID == "" && req.To == "" {
-		http.Error(w, "conversation_id or to is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "conversation_id or to is required"})
 		return
 	}
 
@@ -67,10 +79,8 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		existing, err := h.msgRepo.GetByIdempotencyKey(r.Context(), req.IdempotencyKey)
 		if err == nil && existing != nil {
 			slog.Info("idempotent request, returning existing message", "idempotency_key", req.IdempotencyKey, "message_id", existing.ID)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(SendMessageResponse{
-				MessageID: existing.ID,
-				Status:    existing.Status,
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"ok": true, "data": SendMessageResponse{MessageID: existing.ID, Status: existing.Status},
 			})
 			return
 		}
@@ -82,13 +92,17 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationID := req.ConversationID
-	slog.Info("send message request", "conversation_id", conversationID, "content", req.Content, "message_type", req.MessageType)
+	slog.Info("send message request", "conversation_id", conversationID, "message_type", req.MessageType)
 
 	if conversationID == "" {
-		// TODO: Create conversation from phone number
 		slog.Warn("conversation_id not provided, need to implement contact/conversation lookup")
-		http.Error(w, "conversation_id is required for now", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "conversation_id is required"})
 		return
+	}
+
+	content := req.Content
+	if messageType == "reaction" && req.ReactionEmoji != "" {
+		content = req.ReactionEmoji
 	}
 
 	paramsJSON := ""
@@ -97,14 +111,20 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		paramsJSON = string(data)
 	}
 
+	// Build template info for template messages
+	templateID := req.TemplateID
+	if templateID == "" && req.TemplateName != "" {
+		templateID = req.TemplateName
+	}
+
 	msg := &models.Message{
 		ID:             "",
 		ConversationID: conversationID,
 		Direction:      string(models.MessageDirectionOutbound),
 		MessageType:    messageType,
-		Content:        req.Content,
+		Content:        content,
 		MediaURL:       req.MediaURL,
-		TemplateID:     req.TemplateID,
+		TemplateID:     templateID,
 		TemplateParams: paramsJSON,
 		Status:         string(models.MessageStatusPending),
 		IdempotencyKey: req.IdempotencyKey,
@@ -112,8 +132,8 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.msgRepo.Create(r.Context(), msg); err != nil {
-		slog.Error("failed to create message", "error", err, "conversation_id", msg.ConversationID, "message_id", msg.MessageID, "content", msg.Content)
-		http.Error(w, "failed to create message", http.StatusInternalServerError)
+		slog.Error("failed to create message", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to create message"})
 		return
 	}
 
@@ -126,20 +146,12 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("queuePub is nil, message not queued")
 	}
 
-	resp := SendMessageResponse{
-		MessageID: msg.ID,
-		Status:    "pending",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		slog.Error("failed to encode response", "error", err)
-	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"ok": true, "data": SendMessageResponse{MessageID: msg.ID, Status: "pending"},
+	})
 }
 
 func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
-	// Extract conversation ID from path: /api/v1/conversations/{id}/messages
 	path := r.URL.Path
 	conversationID := ""
 	if strings.HasPrefix(path, "/api/v1/conversations/") {
@@ -154,21 +166,49 @@ func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if conversationID == "" {
-		http.Error(w, "conversation_id is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "conversation_id is required"})
 		return
 	}
 
-	messages, err := h.msgRepo.GetByConversationID(r.Context(), conversationID, 100, 0)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	cursorIDStr := r.URL.Query().Get("cursor_id")
+	offset := 0
+	if cursorIDStr != "" {
+		if cid, err := strconv.Atoi(cursorIDStr); err == nil {
+			offset = cid
+		}
+	}
+
+	messages, err := h.msgRepo.GetByConversationID(r.Context(), conversationID, limit, offset)
 	if err != nil {
 		slog.Error("failed to get messages", "error", err)
-		http.Error(w, "failed to get messages", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to get messages"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(messages); err != nil {
-		slog.Error("failed to encode messages", "error", err)
+	if messages == nil {
+		messages = []models.Message{}
 	}
+
+	hasMore := len(messages) >= limit
+	nextCursorID := offset + len(messages)
+	nextCursorUpdatedAt := ""
+	if hasMore && len(messages) > 0 {
+		nextCursorUpdatedAt = messages[len(messages)-1].CreatedAt.Format(time.RFC3339)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "data": map[string]interface{}{
+			"items":                messages,
+			"limit":                limit,
+			"has_more":             hasMore,
+			"next_cursor_id":       nextCursorID,
+			"next_cursor_updated_at": nextCursorUpdatedAt,
+		},
+	})
 }
 
 func (h *OutboundHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -177,15 +217,8 @@ func (h *OutboundHandler) RegisterRoutes(mux *http.ServeMux) {
 		case http.MethodPost:
 			h.SendMessage(w, r)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "error": "method not allowed"})
 		}
 	})
 
-	mux.HandleFunc("/api/v1/conversations/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			h.GetMessages(w, r)
-		} else {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
 }

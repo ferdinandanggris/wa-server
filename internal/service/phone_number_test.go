@@ -13,6 +13,8 @@ type mockPhoneNumberRepo struct {
 	listFunc          func(ctx context.Context) ([]models.PhoneNumber, error)
 	getByIDFunc       func(ctx context.Context, id string) (*models.PhoneNumber, error)
 	assignCompanyFunc func(ctx context.Context, id, companyID string) error
+	updateActiveFunc  func(ctx context.Context, id string, isActive bool) error
+	updateProfileFunc func(ctx context.Context, pn *models.PhoneNumber) error
 }
 
 func (m *mockPhoneNumberRepo) Upsert(ctx context.Context, pn *models.PhoneNumber) error {
@@ -26,6 +28,18 @@ func (m *mockPhoneNumberRepo) GetByID(ctx context.Context, id string) (*models.P
 }
 func (m *mockPhoneNumberRepo) AssignCompany(ctx context.Context, id, companyID string) error {
 	return m.assignCompanyFunc(ctx, id, companyID)
+}
+func (m *mockPhoneNumberRepo) UpdateIsActive(ctx context.Context, id string, isActive bool) error {
+	if m.updateActiveFunc != nil {
+		return m.updateActiveFunc(ctx, id, isActive)
+	}
+	return nil
+}
+func (m *mockPhoneNumberRepo) UpdateProfile(ctx context.Context, pn *models.PhoneNumber) error {
+	if m.updateProfileFunc != nil {
+		return m.updateProfileFunc(ctx, pn)
+	}
+	return nil
 }
 
 type mockConvRepoForPhone struct {
@@ -46,7 +60,10 @@ func (m *mockWhatsappPhone) GetPhoneNumbers(ctx context.Context) ([]models.Whats
 	return m.getPhoneNumbersFunc(ctx)
 }
 func (m *mockWhatsappPhone) GetBusinessProfile(ctx context.Context, phoneNumberID string) (*models.WhatsAppBusinessProfile, error) {
-	return m.getBusinessProfileFunc(ctx, phoneNumberID)
+	if m.getBusinessProfileFunc != nil {
+		return m.getBusinessProfileFunc(ctx, phoneNumberID)
+	}
+	return &models.WhatsAppBusinessProfile{}, nil
 }
 func (m *mockWhatsappPhone) UpdateBusinessProfile(ctx context.Context, phoneNumberID string, profile *models.WhatsAppBusinessProfile) error {
 	return m.updateBusinessProfileFunc(ctx, phoneNumberID, profile)

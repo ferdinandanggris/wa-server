@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -13,6 +14,8 @@ type PhoneNumberRepository interface {
 	GetByID(ctx context.Context, id string) (*models.PhoneNumber, error)
 	List(ctx context.Context) ([]models.PhoneNumber, error)
 	AssignCompany(ctx context.Context, id, companyID string) error
+	UpdateIsActive(ctx context.Context, id string, isActive bool) error
+	UpdateProfile(ctx context.Context, pn *models.PhoneNumber) error
 }
 
 type ConversationRepoForPhoneNumber interface {
@@ -52,6 +55,7 @@ func (s *PhoneNumberService) SyncFromMeta(ctx context.Context) (int, error) {
 		pn := &models.PhoneNumber{
 			PhoneNumber:   n.DisplayNumber,
 			PhoneNumberID: n.ID,
+			VerifiedName:  n.VerifiedName,
 			CompanyID:     companyID,
 			IsActive:      true,
 		}
@@ -60,6 +64,24 @@ func (s *PhoneNumberService) SyncFromMeta(ctx context.Context) (int, error) {
 			slog.Error("failed to upsert phone number", "phone", n.DisplayNumber, "error", err)
 			continue
 		}
+
+		profile, pErr := s.whatsapp.GetBusinessProfile(ctx, n.ID)
+		if pErr != nil {
+			slog.Warn("failed to fetch business profile", "phone", n.DisplayNumber, "error", pErr)
+		} else {
+			websitesJSON, _ := json.Marshal(profile.Websites)
+			pn.About = profile.About
+			pn.Address = profile.Address
+			pn.Description = profile.Description
+			pn.Email = profile.Email
+			pn.Websites = string(websitesJSON)
+			pn.Vertical = profile.Vertical
+			pn.ProfilePictureURL = profile.ProfilePictureURL
+			if err := s.repo.UpdateProfile(ctx, pn); err != nil {
+				slog.Error("failed to update phone number profile", "phone", n.DisplayNumber, "error", err)
+			}
+		}
+
 		synced++
 	}
 
@@ -92,4 +114,11 @@ func (s *PhoneNumberService) UpdateProfile(ctx context.Context, id string, profi
 		return fmt.Errorf("phone number not found: %w", err)
 	}
 	return s.whatsapp.UpdateBusinessProfile(ctx, pn.PhoneNumberID, profile)
+}
+
+func (s *PhoneNumberService) UpdateIsActive(ctx context.Context, id string, isActive bool) (*models.PhoneNumber, error) {
+	if err := s.repo.UpdateIsActive(ctx, id, isActive); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, id)
 }

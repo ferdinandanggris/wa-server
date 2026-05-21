@@ -17,6 +17,7 @@ type mockPhoneNumberSvc struct {
 	assignFunc func(ctx context.Context, id, companyID string) (*models.PhoneNumber, error)
 	getProfFunc func(ctx context.Context, id string) (*models.WhatsAppBusinessProfile, error)
 	updProfFunc func(ctx context.Context, id string, profile *models.WhatsAppBusinessProfile) error
+	updActFunc  func(ctx context.Context, id string, isActive bool) (*models.PhoneNumber, error)
 }
 
 func (m *mockPhoneNumberSvc) SyncFromMeta(ctx context.Context) (int, error) {
@@ -33,6 +34,12 @@ func (m *mockPhoneNumberSvc) GetProfile(ctx context.Context, id string) (*models
 }
 func (m *mockPhoneNumberSvc) UpdateProfile(ctx context.Context, id string, profile *models.WhatsAppBusinessProfile) error {
 	return m.updProfFunc(ctx, id, profile)
+}
+func (m *mockPhoneNumberSvc) UpdateIsActive(ctx context.Context, id string, isActive bool) (*models.PhoneNumber, error) {
+	if m.updActFunc != nil {
+		return m.updActFunc(ctx, id, isActive)
+	}
+	return &models.PhoneNumber{}, nil
 }
 
 func TestPhoneNumberHandler_List(t *testing.T) {

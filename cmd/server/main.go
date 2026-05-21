@@ -107,6 +107,8 @@ func run() error {
 	pricingRepo := repository.NewPricingRepository(db)
 	pricingSvc := service.NewPricingService(pricingRepo, phoneNumberRepo, waClient, cfg.WhatsApp.WABAID)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
+	conversationHandler := handlers.NewConversationHandler(convRepo, contactRepo, msgRepo, wsHub, cfg.WhatsApp.WABAID)
+	mediaHandler := handlers.NewMediaHandler("")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 	billingHandler := handlers.NewBillingHandler(billingSvc)
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(phoneNumberSvc)
@@ -152,6 +154,8 @@ func run() error {
 	mux.Handle("/metrics", met.Handler())
 
 	outboundHandler.RegisterRoutes(mux)
+	conversationHandler.RegisterRoutes(mux)
+	mediaHandler.RegisterRoutes(mux)
 	templateHandler.RegisterRoutes(mux)
 	billingHandler.RegisterRoutes(mux)
 	phoneNumberHandler.RegisterRoutes(mux, authMW)
@@ -175,10 +179,21 @@ func run() error {
 		}
 	})
 
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok": true, "data": map[string]interface{}{
+				"allowSendTemplate": false, "AllowSendTemplate": false, "status": "ok",
+			},
+		})
+	})
+
+	var handler http.Handler = mux
+	handler = corsMiddleware(handler)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -245,9 +260,37 @@ func run() error {
 	return nil
 }
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Type, Content-Length")
+		w.Header().Set("Access-Control-Max-Age", "0")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Type, Content-Length")
+	w.Header().Set("Access-Control-Max-Age", "0")
+	if status == 0 {
+		status = http.StatusOK
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	w.WriteHeader(status)
-	data, _ := json.Marshal(v)
 	_, _ = w.Write(data)
 }

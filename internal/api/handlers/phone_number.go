@@ -18,6 +18,7 @@ type PhoneNumberService interface {
 	AssignToCompany(ctx context.Context, id, companyID string) (*models.PhoneNumber, error)
 	GetProfile(ctx context.Context, id string) (*models.WhatsAppBusinessProfile, error)
 	UpdateProfile(ctx context.Context, id string, profile *models.WhatsAppBusinessProfile) error
+	UpdateIsActive(ctx context.Context, id string, isActive bool) (*models.PhoneNumber, error)
 }
 
 type PhoneNumberHandler struct {
@@ -161,6 +162,39 @@ func (h *PhoneNumberHandler) updateProfile(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (h *PhoneNumberHandler) updateIsActive(w http.ResponseWriter, r *http.Request) {
+	id := extractID(r.URL.Path, "/api/v1/phone-numbers/")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "VALIDATION_ERROR", "message": "phone number id is required"},
+		})
+		return
+	}
+
+	var body struct {
+		IsActive bool `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "INVALID_JSON", "message": "invalid request body"},
+		})
+		return
+	}
+
+	pn, err := h.svc.UpdateIsActive(r.Context(), id, body.IsActive)
+	if err != nil {
+		slog.Error("failed to update is_active", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": map[string]string{"code": "INTERNAL_ERROR", "message": err.Error()},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "data": pn,
+	})
+}
+
 func (h *PhoneNumberHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	mux.Handle("/api/v1/phone-numbers", authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -195,6 +229,8 @@ func (h *PhoneNumberHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http
 			h.getProfile(w, r)
 		case strings.HasSuffix(path, "/profile") && (r.Method == http.MethodPut || r.Method == http.MethodPatch):
 			h.updateProfile(w, r)
+		case !strings.HasSuffix(path, "/assign") && !strings.HasSuffix(path, "/profile") && r.Method == http.MethodPut:
+			h.updateIsActive(w, r)
 		default:
 			writeMethodNotAllowed(w)
 		}
