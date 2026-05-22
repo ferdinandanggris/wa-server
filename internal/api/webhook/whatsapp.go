@@ -109,8 +109,12 @@ func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 				if change.Value == nil {
 					continue
 				}
+				contactNames := map[string]string{}
+				for _, c := range change.Value.Contacts {
+					contactNames[c.WAID] = c.Profile.Name
+				}
 				for _, msg := range change.Value.Messages {
-					h.processMessage(r.Context(), change.Value.Metadata, msg)
+					h.processMessage(r.Context(), change.Value.Metadata, msg, contactNames[msg.From])
 				}
 				for _, status := range change.Value.Statuses {
 					h.processStatus(r.Context(), status)
@@ -124,27 +128,27 @@ func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 
 const defaultCompanyID = "00000000-0000-0000-0000-000000000001"
 
-func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsAppMetadata, msg WhatsAppMessage) {
+func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsAppMetadata, msg WhatsAppMessage, contactName string) {
 	phoneNumber := extractPhone(msg.From)
 	waID := msg.From
 
-	contact, err := h.contactRepo.GetByWAID(ctx, defaultCompanyID, waID)
-	if err != nil {
-		contact = &models.Contact{
-			ID:          "",
-			CompanyID:   defaultCompanyID,
-			WAID:        waID,
-			PhoneNumber: phoneNumber,
-			Name:        msg.FromProfile.Name,
-			IsBlocked:   false,
-			CreatedAt:   time.Now().UTC(),
-			UpdatedAt:   time.Now().UTC(),
-		}
-		if err := h.contactRepo.Upsert(ctx, contact); err != nil {
-			slog.Error("failed to create contact", "error", err, "wa_id", waID)
-			return
-		}
-		slog.Info("created new contact", "contact_id", contact.ID, "wa_id", waID)
+	contact := &models.Contact{
+		CompanyID:   defaultCompanyID,
+		WAID:        waID,
+		PhoneNumber: phoneNumber,
+		Name:        contactName,
+		IsBlocked:   false,
+		UpdatedAt:   time.Now().UTC(),
+		CreatedAt:   time.Now().UTC(),
+	}
+	existing, err := h.contactRepo.GetByWAID(ctx, defaultCompanyID, waID)
+	if err == nil {
+		contact.ID = existing.ID
+		contact.CreatedAt = existing.CreatedAt
+	}
+	if err := h.contactRepo.Upsert(ctx, contact); err != nil {
+		slog.Error("failed to upsert contact", "error", err, "wa_id", waID)
+		return
 	}
 
 	companyID, err := h.resolveCompanyID(ctx, metadata.PhoneNumberID)
@@ -441,11 +445,17 @@ func (c *WhatsAppChange) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type WhatsAppContact struct {
+	Profile WhatsAppProfile `json:"profile"`
+	WAID    string           `json:"wa_id"`
+}
+
 type WhatsAppValue struct {
 	MessagingProduct string            `json:"messaging_product"`
 	Metadata         *WhatsAppMetadata `json:"metadata"`
 	Messages         []WhatsAppMessage `json:"messages"`
 	Statuses         []WhatsAppStatus  `json:"statuses"`
+	Contacts         []WhatsAppContact `json:"contacts"`
 }
 
 type WhatsAppMetadata struct {
