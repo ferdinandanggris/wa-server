@@ -11,6 +11,7 @@ import (
 
 	"github.com/wa-server/internal/api/webhook"
 	"github.com/wa-server/internal/models"
+	"github.com/wa-server/internal/phone"
 	"github.com/wa-server/internal/repository"
 )
 
@@ -183,6 +184,9 @@ func (h *ConversationHandler) ensureConversation(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "phone_number and customer_wa_id are required"})
 		return
 	}
+
+	req.PhoneNumber = phone.Normalize(req.PhoneNumber)
+	req.CustomerWAID = phone.Normalize(req.CustomerWAID)
 
 	contact, err := h.contactRepo.GetByWAID(r.Context(), "", req.CustomerWAID)
 	if err != nil {

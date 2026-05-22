@@ -12,6 +12,7 @@ import (
 
 	"github.com/wa-server/internal/config"
 	"github.com/wa-server/internal/models"
+	"github.com/wa-server/internal/phone"
 )
 
 // WhatsAppHandler processes incoming WhatsApp webhook events.
@@ -129,7 +130,7 @@ func (h *WhatsAppHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 const defaultCompanyID = "00000000-0000-0000-0000-000000000001"
 
 func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsAppMetadata, msg WhatsAppMessage, contactName string) {
-	phoneNumber := extractPhone(msg.From)
+	phoneNumber := phone.Normalize(extractPhone(msg.From))
 	waID := msg.From
 
 	contact := &models.Contact{

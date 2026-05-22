@@ -197,6 +197,15 @@ Program.cs
 - **DB fix** — Added missing `phone_number` and `conversation_category` columns to `billing_logs` table
 - **Docker** — Rebuilt server image with billing wrapper fix, restarted container
 
+## Session Summary — May 22 2026
+
+### Done
+- **MessageBubble alignment fix** — `normalizeMsg` uppercases direction (`"inbound"` → `"INBOUND"`) so `isOutbound` check works
+- **Duplicate conversation fix** — Migration `016_add_unique_contact_phone.sql` adds `UNIQUE(contact_id, phone_number)`, dedup 6 rows. Webhook now uses `GetByPhoneNumberAndContact` instead of `GetByContactID` (works even when `company_id` is null)
+- **Contact name from Meta profile** — Added `WhatsAppContact` struct + `Contacts` field to `WhatsAppValue` (was silently dropped). Webhook now parses `contacts[].profile.name` and always upserts contact with the name (both CREATE and UPDATE)
+- **Phone number normalization** — New `internal/phone` package with `Normalize()` converting to `+62` format. Applied in `ensureConversation`, worker send path, and webhook `processMessage`
+- **Docker** — Rebuilt with `docker compose build --no-cache` (direct `docker build` didn't update compose-managed image)
+
 ### Phone Numbers Inline Edit
 - **Backend**: Added `PUT /api/v1/phone-numbers/{id}` endpoint to update `is_active`
   - Repository: `UpdateIsActive(ctx, id, isActive bool)`

@@ -10,6 +10,7 @@ import (
 	"github.com/wa-server/internal/agent"
 	"github.com/wa-server/internal/metrics"
 	"github.com/wa-server/internal/models"
+	phonelib "github.com/wa-server/internal/phone"
 	"github.com/wa-server/internal/repository"
 )
 
@@ -209,6 +210,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 	}
 
 	slog.Info("resolved phone number", "phone", phone)
+	phone = phonelib.Normalize(phone)
 
 	pn, err := wp.phoneNumberRepo.GetByPhoneNumber(ctx, phone)
 	if err != nil {
