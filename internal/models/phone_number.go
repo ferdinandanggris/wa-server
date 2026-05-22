@@ -31,6 +31,7 @@ type PhoneNumberRepository interface {
 	GetByMetaID(ctx context.Context, metaID string) (*PhoneNumber, error)
 	GetByCompanyID(ctx context.Context, companyID string) ([]PhoneNumber, error)
 	GetByID(ctx context.Context, id string) (*PhoneNumber, error)
+	GetByConversationID(ctx context.Context, conversationID string) (*PhoneNumber, error)
 	List(ctx context.Context) ([]PhoneNumber, error)
 	UpdateProfile(ctx context.Context, pn *PhoneNumber) error
 }

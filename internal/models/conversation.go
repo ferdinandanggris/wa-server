@@ -11,6 +11,7 @@ type Conversation struct {
 	CompanyID             string     `json:"company_id"`
 	ContactID             string     `json:"contact_id"`
 	PhoneNumber           string     `json:"phone_number,omitempty"`
+	PhoneNumberID         string     `json:"phone_number_id,omitempty"`
 	AssignedAgentID       string     `json:"assigned_agent_id,omitempty"`
 	Status                string     `json:"status"`
 	LastCustomerMessageAt *time.Time `json:"last_customer_message_at,omitempty"`

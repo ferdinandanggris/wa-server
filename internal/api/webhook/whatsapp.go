@@ -15,15 +15,15 @@ import (
 	"github.com/wa-server/internal/phone"
 )
 
-// WhatsAppHandler processes incoming WhatsApp webhook events.
 type WhatsAppHandler struct {
-	cfg          *config.Config
-	msgRepo      models.MessageRepository
-	contactRepo  models.ContactRepository
-	convRepo     models.ConversationRepository
-	tmplRepo     models.TemplateRepository
-	messageQueue MessagePublisher
-	wsHub        *WebSocketHub
+	cfg             *config.Config
+	msgRepo         models.MessageRepository
+	contactRepo     models.ContactRepository
+	convRepo        models.ConversationRepository
+	tmplRepo        models.TemplateRepository
+	phoneNumberRepo models.PhoneNumberRepository
+	messageQueue    MessagePublisher
+	wsHub           *WebSocketHub
 }
 
 // MessagePublisher sends messages to the RabbitMQ exchange for async processing.
@@ -39,17 +39,19 @@ func NewWhatsAppHandler(
 	contactRepo models.ContactRepository,
 	convRepo models.ConversationRepository,
 	tmplRepo models.TemplateRepository,
+	phoneNumberRepo models.PhoneNumberRepository,
 	queue MessagePublisher,
 	wsHub *WebSocketHub,
 ) *WhatsAppHandler {
 	return &WhatsAppHandler{
-		cfg:          cfg,
-		msgRepo:      msgRepo,
-		contactRepo:  contactRepo,
-		convRepo:     convRepo,
-		tmplRepo:     tmplRepo,
-		messageQueue: queue,
-		wsHub:        wsHub,
+		cfg:             cfg,
+		msgRepo:         msgRepo,
+		contactRepo:     contactRepo,
+		convRepo:        convRepo,
+		tmplRepo:        tmplRepo,
+		phoneNumberRepo: phoneNumberRepo,
+		messageQueue:    queue,
+		wsHub:           wsHub,
 	}
 }
 
@@ -158,6 +160,12 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 		return
 	}
 
+	var localPhoneNumberID string
+	pn, err := h.phoneNumberRepo.GetByMetaID(ctx, metadata.PhoneNumberID)
+	if err == nil {
+		localPhoneNumberID = pn.ID
+	}
+
 	slog.Info("looking for conversation", "phone_number", phoneNumber, "contact_id", contact.ID)
 	conv, err := h.convRepo.GetByPhoneNumberAndContact(ctx, phoneNumber, contact.ID)
 	if err != nil {
@@ -166,6 +174,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 			CompanyID:             companyID,
 			ContactID:             contact.ID,
 			PhoneNumber:           phoneNumber,
+			PhoneNumberID:         localPhoneNumberID,
 			Status:                string(models.ConversationStatusOpen),
 			Is24hWindowActive:     true,
 			UnreadCount:           1,

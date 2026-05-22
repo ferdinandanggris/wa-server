@@ -38,6 +38,7 @@ type ConversationRepoForWorker interface {
 
 type PhoneNumberRepoForWorker interface {
 	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.PhoneNumber, error)
+	GetByConversationID(ctx context.Context, conversationID string) (*models.PhoneNumber, error)
 }
 
 type WorkerPool struct {
@@ -212,7 +213,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 	slog.Info("resolved phone number", "phone", phone)
 	phone = phonelib.Normalize(phone)
 
-	pn, err := wp.phoneNumberRepo.GetByPhoneNumber(ctx, phone)
+	pn, err := wp.phoneNumberRepo.GetByConversationID(ctx, message.ConversationID)
 	if err != nil {
 		slog.Error("failed to get phone number record", "error", err, "phone", phone)
 		wp.failMessage(ctx, message.ID, "phone number not registered")

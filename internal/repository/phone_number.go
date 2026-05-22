@@ -170,6 +170,13 @@ func (r *PhoneNumberRepository) UpdateLastSyncPricing(ctx context.Context, unixS
 	return nil
 }
 
+func (r *PhoneNumberRepository) GetByConversationID(ctx context.Context, conversationID string) (*models.PhoneNumber, error) {
+	query := `SELECT ` + phoneNumberCols + ` FROM phone_numbers
+		WHERE id = (SELECT phone_number_id FROM conversations WHERE id = $1::uuid)
+	`
+	return scanPhoneNumber(r.db.QueryRowContext(ctx, query, conversationID))
+}
+
 func (r *PhoneNumberRepository) List(ctx context.Context) ([]models.PhoneNumber, error) {
 	query := `SELECT ` + phoneNumberCols + ` FROM phone_numbers ORDER BY created_at DESC`
 

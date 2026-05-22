@@ -33,20 +33,22 @@ type ContactRepoForConversation interface {
 }
 
 type ConversationHandler struct {
-	convRepo    ConversationRepo
-	contactRepo ContactRepoForConversation
-	msgRepo     models.MessageRepository
-	wsHub       *webhook.WebSocketHub
-	wabaID      string
+	convRepo        ConversationRepo
+	contactRepo     ContactRepoForConversation
+	msgRepo         models.MessageRepository
+	phoneNumberRepo models.PhoneNumberRepository
+	wsHub           *webhook.WebSocketHub
+	wabaID          string
 }
 
-func NewConversationHandler(convRepo ConversationRepo, contactRepo ContactRepoForConversation, msgRepo models.MessageRepository, wsHub *webhook.WebSocketHub, wabaID string) *ConversationHandler {
+func NewConversationHandler(convRepo ConversationRepo, contactRepo ContactRepoForConversation, msgRepo models.MessageRepository, phoneNumberRepo models.PhoneNumberRepository, wsHub *webhook.WebSocketHub, wabaID string) *ConversationHandler {
 	return &ConversationHandler{
-		convRepo:    convRepo,
-		contactRepo: contactRepo,
-		msgRepo:     msgRepo,
-		wsHub:       wsHub,
-		wabaID:      wabaID,
+		convRepo:        convRepo,
+		contactRepo:     contactRepo,
+		msgRepo:         msgRepo,
+		phoneNumberRepo: phoneNumberRepo,
+		wsHub:           wsHub,
+		wabaID:          wabaID,
 	}
 }
 
@@ -216,10 +218,16 @@ func (h *ConversationHandler) ensureConversation(w http.ResponseWriter, r *http.
 		return
 	}
 
+	var localPhoneNumberID string
+	if pn, err := h.phoneNumberRepo.GetByPhoneNumber(r.Context(), req.PhoneNumber); err == nil {
+		localPhoneNumberID = pn.ID
+	}
+
 	conv := &models.Conversation{
-		PhoneNumber:     req.PhoneNumber,
-		ContactID:       contact.ID,
-		Status:          string(models.ConversationStatusOpen),
+		PhoneNumber:       req.PhoneNumber,
+		PhoneNumberID:     localPhoneNumberID,
+		ContactID:         contact.ID,
+		Status:            string(models.ConversationStatusOpen),
 		Is24hWindowActive: true,
 		LastMessagePreview: "",
 	}

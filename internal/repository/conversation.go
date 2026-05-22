@@ -77,17 +77,20 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		assignedAgentID = conv.AssignedAgentID
 	}
 
-	var phoneNumber interface{}
+	var phoneNumber, phoneNumberID interface{}
 	if conv.PhoneNumber != "" {
 		phoneNumber = conv.PhoneNumber
+	}
+	if conv.PhoneNumberID != "" {
+		phoneNumberID = conv.PhoneNumberID
 	}
 
 	query := `
 		INSERT INTO conversations (
 			id, company_id, contact_id, assigned_agent_id, status,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			unread_count, last_message_preview, phone_number, phone_number_id, started_at, closed_at, created_at, updated_at
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, $13, $14, $15, $16)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -102,6 +105,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		conv.UnreadCount,
 		conv.LastMessagePreview,
 		phoneNumber,
+		phoneNumberID,
 		conv.StartedAt,
 		conv.ClosedAt,
 		conv.CreatedAt,
@@ -111,33 +115,24 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 	return err
 }
 
-func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations WHERE id = $1
-	`
+var conversationCols = `id, company_id, contact_id, assigned_agent_id, status,
+	last_customer_message_at, last_agent_message_at, is_24h_window_active,
+	unread_count, last_message_preview, phone_number, phone_number_id, started_at, closed_at, created_at, updated_at`
 
+func scanConversation(scanner interface{ Scan(dest ...interface{}) error }) (models.Conversation, error) {
 	var conv models.Conversation
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&conv.ID,
-		&conv.CompanyID,
-		&conv.ContactID,
-		&conv.AssignedAgentID,
-		&conv.Status,
-		&conv.LastCustomerMessageAt,
-		&conv.LastAgentMessageAt,
-		&conv.Is24hWindowActive,
-		&conv.UnreadCount,
-		&conv.LastMessagePreview,
-		&conv.PhoneNumber,
-		&conv.StartedAt,
-		&conv.ClosedAt,
-		&conv.CreatedAt,
-		&conv.UpdatedAt,
+	err := scanner.Scan(
+		&conv.ID, &conv.CompanyID, &conv.ContactID, &conv.AssignedAgentID, &conv.Status,
+		&conv.LastCustomerMessageAt, &conv.LastAgentMessageAt, &conv.Is24hWindowActive,
+		&conv.UnreadCount, &conv.LastMessagePreview, &conv.PhoneNumber, &conv.PhoneNumberID,
+		&conv.StartedAt, &conv.ClosedAt, &conv.CreatedAt, &conv.UpdatedAt,
 	)
+	return conv, err
+}
 
+func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*models.Conversation, error) {
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE id = $1`
+	conv, err := scanConversation(r.db.QueryRowContext(ctx, query, id))
 	if err != nil {
 		return nil, err
 	}
@@ -145,39 +140,17 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*model
 }
 
 func (r *ConversationRepository) GetByIDWithCompany(ctx context.Context, id string) (*models.Conversation, error) {
-	return r.GetByID(ctx, id)
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE id = $1`
+	conv, err := scanConversation(r.db.QueryRowContext(ctx, query, id))
+	if err != nil {
+		return nil, err
+	}
+	return &conv, nil
 }
 
 func (r *ConversationRepository) GetByPhoneNumber(ctx context.Context, phoneNumber string) (*models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE phone_number = $1
-		ORDER BY created_at DESC
-		LIMIT 1
-	`
-
-	var conv models.Conversation
-	err := r.db.QueryRowContext(ctx, query, phoneNumber).Scan(
-		&conv.ID,
-		&conv.CompanyID,
-		&conv.ContactID,
-		&conv.AssignedAgentID,
-		&conv.Status,
-		&conv.LastCustomerMessageAt,
-		&conv.LastAgentMessageAt,
-		&conv.Is24hWindowActive,
-		&conv.UnreadCount,
-		&conv.LastMessagePreview,
-		&conv.PhoneNumber,
-		&conv.StartedAt,
-		&conv.ClosedAt,
-		&conv.CreatedAt,
-		&conv.UpdatedAt,
-	)
-
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 1`
+	conv, err := scanConversation(r.db.QueryRowContext(ctx, query, phoneNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -185,35 +158,8 @@ func (r *ConversationRepository) GetByPhoneNumber(ctx context.Context, phoneNumb
 }
 
 func (r *ConversationRepository) GetByContactID(ctx context.Context, companyID, contactID string) (*models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE company_id = $1 AND contact_id = $2
-		ORDER BY created_at DESC
-		LIMIT 1
-	`
-
-	var conv models.Conversation
-	err := r.db.QueryRowContext(ctx, query, companyID, contactID).Scan(
-		&conv.ID,
-		&conv.CompanyID,
-		&conv.ContactID,
-		&conv.AssignedAgentID,
-		&conv.Status,
-		&conv.LastCustomerMessageAt,
-		&conv.LastAgentMessageAt,
-		&conv.Is24hWindowActive,
-		&conv.UnreadCount,
-		&conv.LastMessagePreview,
-		&conv.PhoneNumber,
-		&conv.StartedAt,
-		&conv.ClosedAt,
-		&conv.CreatedAt,
-		&conv.UpdatedAt,
-	)
-
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE company_id = $1 AND contact_id = $2 ORDER BY created_at DESC LIMIT 1`
+	conv, err := scanConversation(r.db.QueryRowContext(ctx, query, companyID, contactID))
 	if err != nil {
 		return nil, err
 	}
@@ -319,110 +265,58 @@ func (r *ConversationRepository) ResetUnread(ctx context.Context, id string) err
 }
 
 func (r *ConversationRepository) ListByCompany(ctx context.Context, companyID string, limit, offset int) ([]models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE company_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`
-
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE company_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
 	rows, err := r.db.QueryContext(ctx, query, companyID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var convs []models.Conversation
 	for rows.Next() {
-		var conv models.Conversation
-		err := rows.Scan(
-			&conv.ID,
-			&conv.CompanyID,
-			&conv.ContactID,
-			&conv.AssignedAgentID,
-			&conv.Status,
-			&conv.LastCustomerMessageAt,
-			&conv.LastAgentMessageAt,
-			&conv.Is24hWindowActive,
-			&conv.UnreadCount,
-			&conv.LastMessagePreview,
-			&conv.StartedAt,
-			&conv.ClosedAt,
-			&conv.CreatedAt,
-			&conv.UpdatedAt,
-		)
+		conv, err := scanConversation(rows)
 		if err != nil {
 			return nil, err
 		}
 		convs = append(convs, conv)
 	}
-
 	return convs, rows.Err()
 }
 
 func (r *ConversationRepository) ListByAgent(ctx context.Context, agentID string) ([]models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE assigned_agent_id = $1
-		ORDER BY last_customer_message_at DESC
-	`
-
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE assigned_agent_id = $1 ORDER BY last_customer_message_at DESC`
 	rows, err := r.db.QueryContext(ctx, query, agentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var convs []models.Conversation
 	for rows.Next() {
-		var conv models.Conversation
-		err := rows.Scan(
-			&conv.ID,
-			&conv.CompanyID,
-			&conv.ContactID,
-			&conv.AssignedAgentID,
-			&conv.Status,
-			&conv.LastCustomerMessageAt,
-			&conv.LastAgentMessageAt,
-			&conv.Is24hWindowActive,
-			&conv.UnreadCount,
-			&conv.LastMessagePreview,
-			&conv.StartedAt,
-			&conv.ClosedAt,
-			&conv.CreatedAt,
-			&conv.UpdatedAt,
-		)
+		conv, err := scanConversation(rows)
 		if err != nil {
 			return nil, err
 		}
 		convs = append(convs, conv)
 	}
-
 	return convs, rows.Err()
 }
 
 const conversationSelectWithJoin = `
 	SELECT c.id, COALESCE(c.company_id::text, ''), COALESCE(c.contact_id::text, ''), COALESCE(c.assigned_agent_id::text, ''), c.status,
 		c.last_customer_message_at, c.last_agent_message_at, c.is_24h_window_active,
-		c.unread_count, COALESCE(c.last_message_preview, ''), COALESCE(c.phone_number, ''), c.started_at, c.closed_at, c.created_at, c.updated_at,
+		c.unread_count, COALESCE(c.last_message_preview, ''), COALESCE(c.phone_number, ''), COALESCE(c.phone_number_id::text, ''), c.started_at, c.closed_at, c.created_at, c.updated_at,
 		COALESCE(ct.wa_id, ''), COALESCE(ct.name, ''), COALESCE(ct.phone_number, ''),
 		COALESCE(pn.id::text, ''), COALESCE(pn.phone_number_id::text, ''), COALESCE(pn.verified_name, '')
 	FROM conversations c
 	LEFT JOIN contacts ct ON c.contact_id = ct.id
-	LEFT JOIN phone_numbers pn ON c.phone_number = pn.phone_number`
+	LEFT JOIN phone_numbers pn ON pn.id = c.phone_number_id`
 
 func scanConversationRow(scanner interface{ Scan(dest ...interface{}) error }) (ConversationRow, error) {
 	var row ConversationRow
 	err := scanner.Scan(
 		&row.ID, &row.CompanyID, &row.ContactID, &row.AssignedAgentID, &row.Status,
 		&row.LastCustomerMessageAt, &row.LastAgentMessageAt, &row.Is24hWindowActive,
-		&row.UnreadCount, &row.LastMessagePreview, &row.PhoneNumber, &row.StartedAt, &row.ClosedAt, &row.CreatedAt, &row.UpdatedAt,
+		&row.UnreadCount, &row.LastMessagePreview, &row.PhoneNumber, &row.PhoneNumberID,
+		&row.StartedAt, &row.ClosedAt, &row.CreatedAt, &row.UpdatedAt,
 		&row.CustomerWAID, &row.CustomerName, &row.ContactPhone,
 		&row.WaChannelID, &row.WaPhoneNumberID, &row.VerifiedName,
 	)
@@ -564,23 +458,9 @@ func (r *ConversationRepository) GetUnreadSummaryByPhoneNumber(ctx context.Conte
 	return result, rows.Err()
 }
 
-// GetByPhoneNumberAndContact finds a conversation by phone number and contact ID.
 func (r *ConversationRepository) GetByPhoneNumberAndContact(ctx context.Context, phoneNumber, contactID string) (*models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE phone_number = $1 AND contact_id = $2::uuid
-		ORDER BY created_at DESC LIMIT 1
-	`
-
-	var conv models.Conversation
-	err := r.db.QueryRowContext(ctx, query, phoneNumber, contactID).Scan(
-		&conv.ID, &conv.CompanyID, &conv.ContactID, &conv.AssignedAgentID, &conv.Status,
-		&conv.LastCustomerMessageAt, &conv.LastAgentMessageAt, &conv.Is24hWindowActive,
-		&conv.UnreadCount, &conv.LastMessagePreview, &conv.PhoneNumber, &conv.StartedAt, &conv.ClosedAt, &conv.CreatedAt, &conv.UpdatedAt,
-	)
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE phone_number = $1 AND contact_id = $2::uuid ORDER BY created_at DESC LIMIT 1`
+	conv, err := scanConversation(r.db.QueryRowContext(ctx, query, phoneNumber, contactID))
 	if err != nil {
 		return nil, err
 	}
@@ -588,45 +468,19 @@ func (r *ConversationRepository) GetByPhoneNumberAndContact(ctx context.Context,
 }
 
 func (r *ConversationRepository) ListOpen(ctx context.Context, companyID string) ([]models.Conversation, error) {
-	query := `
-		SELECT id, company_id, contact_id, assigned_agent_id, status,
-			last_customer_message_at, last_agent_message_at, is_24h_window_active,
-			unread_count, last_message_preview, phone_number, started_at, closed_at, created_at, updated_at
-		FROM conversations
-		WHERE company_id = $1 AND status IN ('open', 'assigned', 'escalated')
-		ORDER BY last_customer_message_at DESC
-	`
-
+	query := `SELECT ` + conversationCols + ` FROM conversations WHERE company_id = $1 AND status IN ('open', 'assigned', 'escalated') ORDER BY last_customer_message_at DESC`
 	rows, err := r.db.QueryContext(ctx, query, companyID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var convs []models.Conversation
 	for rows.Next() {
-		var conv models.Conversation
-		err := rows.Scan(
-			&conv.ID,
-			&conv.CompanyID,
-			&conv.ContactID,
-			&conv.AssignedAgentID,
-			&conv.Status,
-			&conv.LastCustomerMessageAt,
-			&conv.LastAgentMessageAt,
-			&conv.Is24hWindowActive,
-			&conv.UnreadCount,
-			&conv.LastMessagePreview,
-			&conv.StartedAt,
-			&conv.ClosedAt,
-			&conv.CreatedAt,
-			&conv.UpdatedAt,
-		)
+		conv, err := scanConversation(rows)
 		if err != nil {
 			return nil, err
 		}
 		convs = append(convs, conv)
 	}
-
 	return convs, rows.Err()
 }

@@ -94,6 +94,7 @@ func run() error {
 		contactRepo,
 		convRepo,
 		templateRepo,
+		phoneNumberRepo,
 		publisher,
 		wsHub,
 	)
@@ -107,7 +108,7 @@ func run() error {
 	pricingRepo := repository.NewPricingRepository(db)
 	pricingSvc := service.NewPricingService(pricingRepo, phoneNumberRepo, waClient, cfg.WhatsApp.WABAID)
 	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
-	conversationHandler := handlers.NewConversationHandler(convRepo, contactRepo, msgRepo, wsHub, cfg.WhatsApp.WABAID)
+	conversationHandler := handlers.NewConversationHandler(convRepo, contactRepo, msgRepo, phoneNumberRepo, wsHub, cfg.WhatsApp.WABAID)
 	mediaHandler := handlers.NewMediaHandler("")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 	billingHandler := handlers.NewBillingHandler(billingSvc)
