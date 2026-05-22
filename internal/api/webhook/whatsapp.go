@@ -128,7 +128,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 	phoneNumber := extractPhone(msg.From)
 	waID := msg.From
 
-	contact, err := h.contactRepo.GetByWAID(ctx, metadata.PhoneNumberID, waID)
+	contact, err := h.contactRepo.GetByWAID(ctx, defaultCompanyID, waID)
 	if err != nil {
 		contact = &models.Contact{
 			ID:          "",
@@ -153,8 +153,8 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 		return
 	}
 
-	slog.Info("looking for conversation", "company_id", companyID, "contact_id", contact.ID)
-	conv, err := h.convRepo.GetByContactID(ctx, companyID, contact.ID)
+	slog.Info("looking for conversation", "phone_number", phoneNumber, "contact_id", contact.ID)
+	conv, err := h.convRepo.GetByPhoneNumberAndContact(ctx, phoneNumber, contact.ID)
 	if err != nil {
 		conv = &models.Conversation{
 			ID:                    "",

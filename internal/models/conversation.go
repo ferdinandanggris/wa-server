@@ -41,6 +41,7 @@ type ConversationRepository interface {
 	GetByIDWithCompany(ctx context.Context, id string) (*Conversation, error)
 	GetByContactID(ctx context.Context, companyID, contactID string) (*Conversation, error)
 	GetByPhoneNumber(ctx context.Context, phoneNumber string) (*Conversation, error)
+	GetByPhoneNumberAndContact(ctx context.Context, phoneNumber, contactID string) (*Conversation, error)
 	Update(ctx context.Context, conv *Conversation) error
 	Update24hWindow(ctx context.Context, id string, isActive bool, lastMessageAt time.Time) error
 	AssignAgent(ctx context.Context, id, agentID string) error

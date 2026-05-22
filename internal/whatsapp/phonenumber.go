@@ -21,11 +21,15 @@ func NormalizePhoneNumber(phone string) string {
 	}
 
 	if strings.HasPrefix(digits, "0") {
-		return "62" + digits[1:]
+		return "+62" + digits[1:]
 	}
 
-	if !strings.HasPrefix(digits, "62") {
-		return "62" + digits
+	if strings.HasPrefix(digits, "62") {
+		return "+" + digits
+	}
+
+	if strings.HasPrefix(digits, "8") {
+		return "+62" + digits
 	}
 
 	return digits
