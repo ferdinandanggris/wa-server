@@ -11,7 +11,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
       "targets": [{
-        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"incoming webhook\" [1m])) or sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"HandleWebhook\" [1m]))",
+        "expr": "sum(rate({container=\"/wa-server-app\"} |= \"incoming webhook\" [1m]))",
         "legendFormat": "webhooks/s"
       }],
       "fieldConfig": {
@@ -26,7 +26,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
       "targets": [{
-        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"ERROR\" [1m]))",
+        "expr": "sum(rate({container=\"/wa-server-app\"} |= \"ERROR\" [1m]))",
         "legendFormat": "errors/s"
       }],
       "fieldConfig": {
@@ -41,7 +41,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
       "targets": [{
-        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"message sent successfully\" [1m]))",
+        "expr": "sum(rate({container=\"/wa-server-app\"} |= \"message sent successfully\" [1m]))",
         "legendFormat": "sent/min"
       }],
       "fieldConfig": {
@@ -56,7 +56,7 @@
       "type": "logs",
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
       "targets": [{
-        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"webhook\"",
+        "expr": "{container=\"/wa-server-app\"} |= \"incoming webhook\"",
         "refId": "A"
       }],
       "options": {
@@ -71,7 +71,7 @@
       "type": "logs",
       "gridPos": { "h": 12, "w": 12, "x": 0, "y": 20 },
       "targets": [{
-        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"ERROR\"",
+        "expr": "{container=\"/wa-server-app\"} |= \"ERROR\"",
         "refId": "A"
       }],
       "options": {
@@ -86,7 +86,7 @@
       "type": "logs",
       "gridPos": { "h": 12, "w": 12, "x": 12, "y": 20 },
       "targets": [{
-        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"updated message status\"",
+        "expr": "{container=\"/wa-server-app\"} |= \"updated message status\"",
         "refId": "A"
       }],
       "options": {

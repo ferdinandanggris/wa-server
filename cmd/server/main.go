@@ -108,7 +108,7 @@ func run() error {
 	phoneNumberSvc := service.NewPhoneNumberService(phoneNumberRepo, convRepo, waClient)
 	pricingRepo := repository.NewPricingRepository(db)
 	pricingSvc := service.NewPricingService(pricingRepo, phoneNumberRepo, waClient, cfg.WhatsApp.WABAID)
-	outboundHandler := handlers.NewOutboundHandler(msgRepo, publisher, "default")
+	outboundHandler := handlers.NewOutboundHandler(msgRepo, convRepo, publisher, "default", wsHub)
 	conversationHandler := handlers.NewConversationHandler(convRepo, contactRepo, msgRepo, phoneNumberRepo, wsHub, cfg.WhatsApp.WABAID)
 	mediaHandler := handlers.NewMediaHandler("")
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
@@ -131,7 +131,7 @@ func run() error {
 		agentTrackers[i] = agent.NewTracker(rdb, agentID)
 	}
 
-	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, phoneNumberRepo, 5)
+	workerPool := queue.NewWorkerPool(rmq, waClient, msgRepo, contactRepo, companyRepo, billingRepo, convRepo, phoneNumberRepo, 5, wsHub)
 	workerPool.WithMetrics(met).WithAgentTrackers(agentTrackers)
 	if err := workerPool.Start(); err != nil {
 		return fmt.Errorf("start worker pool: %w", err)

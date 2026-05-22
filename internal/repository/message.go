@@ -246,7 +246,7 @@ func (r *MessageRepository) SetFailed(ctx context.Context, id, errMsg string) er
 }
 
 func (r *MessageRepository) UpdateWAMessageID(ctx context.Context, id, waMessageID string) error {
-	query := `UPDATE messages SET message_id = $1, status = 'sent', sent_at = $2 WHERE id = $3`
+	query := `UPDATE messages SET message_id = $1, status = 'sent', sent_at = $2 WHERE id = $3 AND status = 'pending'`
 	result, err := r.db.ExecContext(ctx, query, waMessageID, time.Now().UTC(), id)
 	if err != nil {
 		return err

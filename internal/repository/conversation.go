@@ -115,9 +115,10 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 	return err
 }
 
-var conversationCols = `id, company_id, contact_id, assigned_agent_id, status,
+var conversationCols = `id, COALESCE(company_id::text, ''), contact_id, COALESCE(assigned_agent_id::text, ''), status,
 	last_customer_message_at, last_agent_message_at, is_24h_window_active,
-	unread_count, last_message_preview, phone_number, phone_number_id, started_at, closed_at, created_at, updated_at`
+	unread_count, COALESCE(last_message_preview, ''), COALESCE(phone_number, ''), COALESCE(phone_number_id::text, ''),
+	started_at, closed_at, created_at, updated_at`
 
 func scanConversation(scanner interface{ Scan(dest ...interface{}) error }) (models.Conversation, error) {
 	var conv models.Conversation
@@ -169,6 +170,11 @@ func (r *ConversationRepository) GetByContactID(ctx context.Context, companyID, 
 func (r *ConversationRepository) Update(ctx context.Context, conv *models.Conversation) error {
 	conv.UpdatedAt = time.Now().UTC()
 
+	var assignedAgentID interface{} = conv.AssignedAgentID
+	if assignedAgentID == "" {
+		assignedAgentID = nil
+	}
+
 	query := `
 		UPDATE conversations
 		SET assigned_agent_id = $2, status = $3, last_customer_message_at = $4,
@@ -179,7 +185,7 @@ func (r *ConversationRepository) Update(ctx context.Context, conv *models.Conver
 
 	result, err := r.db.ExecContext(ctx, query,
 		conv.ID,
-		conv.AssignedAgentID,
+		assignedAgentID,
 		conv.Status,
 		conv.LastCustomerMessageAt,
 		conv.LastAgentMessageAt,
@@ -376,14 +382,14 @@ func (r *ConversationRepository) ListWithCursor(ctx context.Context, cursorID st
 	return result, rows.Err()
 }
 
-// ListByPhoneNumberWithCursor filters conversations by phone number string with cursor pagination.
-func (r *ConversationRepository) ListByPhoneNumberWithCursor(ctx context.Context, phoneNumber, cursorID string, cursorUpdatedAt time.Time, limit int, search, filter string) ([]ConversationRow, error) {
+// ListByPhoneNumberIDWithCursor filters conversations by phone_number_id with cursor pagination.
+func (r *ConversationRepository) ListByPhoneNumberIDWithCursor(ctx context.Context, phoneNumberID, cursorID string, cursorUpdatedAt time.Time, limit int, search, filter string) ([]ConversationRow, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	args := []interface{}{phoneNumber, limit}
-	conditions := []string{"c.phone_number = $1"}
+	args := []interface{}{phoneNumberID, limit}
+	conditions := []string{"c.phone_number_id = $1::uuid"}
 
 	if cursorID != "" && !cursorUpdatedAt.IsZero() {
 		conditions = append(conditions, `(c.updated_at, c.id) < ($3, $4::uuid)`)

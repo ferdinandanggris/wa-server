@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wa-server/internal/api/webhook"
 	"github.com/wa-server/internal/models"
 	"github.com/wa-server/internal/queue"
 )
@@ -15,16 +16,20 @@ import (
 // OutboundHandler handles outgoing message API requests.
 type OutboundHandler struct {
 	msgRepo   models.MessageRepository
+	convRepo  models.ConversationRepository
 	queuePub  *queue.Publisher
 	companyID string
+	wsHub     *webhook.WebSocketHub
 }
 
 // NewOutboundHandler creates a new OutboundHandler.
-func NewOutboundHandler(msgRepo models.MessageRepository, queuePub *queue.Publisher, companyID string) *OutboundHandler {
+func NewOutboundHandler(msgRepo models.MessageRepository, convRepo models.ConversationRepository, queuePub *queue.Publisher, companyID string, wsHub *webhook.WebSocketHub) *OutboundHandler {
 	return &OutboundHandler{
 		msgRepo:   msgRepo,
+		convRepo:  convRepo,
 		queuePub:  queuePub,
 		companyID: companyID,
+		wsHub:     wsHub,
 	}
 }
 
@@ -135,6 +140,36 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to create message", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to create message"})
 		return
+	}
+
+	preview := content
+	if preview == "" {
+		if messageType == "image" {
+			preview = "🖼 Image"
+		} else if messageType == "document" {
+			preview = "📄 Document"
+		} else if messageType == "reaction" {
+			preview = content
+		}
+	}
+	if conv, err := h.convRepo.GetByID(r.Context(), conversationID); err == nil {
+		conv.LastMessagePreview = preview
+		conv.UpdatedAt = time.Now().UTC()
+		if err := h.convRepo.Update(r.Context(), conv); err != nil {
+			slog.Error("failed to update conversation preview", "error", err)
+		}
+		if h.wsHub != nil {
+			h.wsHub.BroadcastToCompany(conv.CompanyID, webhook.WebSocketMessage{
+				Type: "UpdateConversation",
+				Payload: map[string]interface{}{
+					"id":                  conv.ID,
+					"last_message_preview": preview,
+					"unread_count":        conv.UnreadCount,
+					"status":              conv.Status,
+					"updated_at":          time.Now().UTC(),
+				},
+			})
+		}
 	}
 
 	if h.queuePub != nil {

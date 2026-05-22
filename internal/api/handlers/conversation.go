@@ -17,7 +17,7 @@ import (
 
 type ConversationRepo interface {
 	ListWithCursor(ctx context.Context, cursorID string, cursorUpdatedAt time.Time, limit int, search, filter string) ([]repository.ConversationRow, error)
-	ListByPhoneNumberWithCursor(ctx context.Context, phoneNumber, cursorID string, cursorUpdatedAt time.Time, limit int, search, filter string) ([]repository.ConversationRow, error)
+	ListByPhoneNumberIDWithCursor(ctx context.Context, phoneNumberID, cursorID string, cursorUpdatedAt time.Time, limit int, search, filter string) ([]repository.ConversationRow, error)
 	GetUnreadSummaryByPhoneNumber(ctx context.Context) ([]repository.PhoneSummaryRow, error)
 	GetByID(ctx context.Context, id string) (*models.Conversation, error)
 	GetByPhoneNumberAndContact(ctx context.Context, phoneNumber, contactID string) (*models.Conversation, error)
@@ -113,7 +113,7 @@ func (h *ConversationHandler) listConversations(w http.ResponseWriter, r *http.R
 	if filter == "" {
 		filter = "all"
 	}
-	phoneNumber := q.Get("phone_number")
+	phoneNumberID := q.Get("phone_number_id")
 	cursorID := q.Get("cursor_id")
 	cursorUpdatedAtStr := q.Get("cursor_updated_at")
 
@@ -125,8 +125,8 @@ func (h *ConversationHandler) listConversations(w http.ResponseWriter, r *http.R
 	var rows []repository.ConversationRow
 	var err error
 
-	if phoneNumber != "" {
-		rows, err = h.convRepo.ListByPhoneNumberWithCursor(r.Context(), phoneNumber, cursorID, cursorUpdatedAt, limit, search, filter)
+	if phoneNumberID != "" {
+		rows, err = h.convRepo.ListByPhoneNumberIDWithCursor(r.Context(), phoneNumberID, cursorID, cursorUpdatedAt, limit, search, filter)
 	} else {
 		rows, err = h.convRepo.ListWithCursor(r.Context(), cursorID, cursorUpdatedAt, limit, search, filter)
 	}
@@ -344,7 +344,12 @@ func (h *ConversationHandler) sendTyping(w http.ResponseWriter, r *http.Request)
 	defer r.Body.Close()
 
 	if h.wsHub != nil {
-		h.wsHub.BroadcastToCompany("", webhook.WebSocketMessage{
+		companyID := ""
+		conv, err := h.convRepo.GetByID(r.Context(), convID)
+		if err == nil {
+			companyID = conv.CompanyID
+		}
+		h.wsHub.BroadcastToCompany(companyID, webhook.WebSocketMessage{
 			Type: "AgentTyping",
 			Payload: map[string]interface{}{
 				"conversation_id": convID,

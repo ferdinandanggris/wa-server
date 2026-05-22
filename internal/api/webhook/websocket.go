@@ -127,6 +127,9 @@ func (h *WebSocketHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "company_id required", http.StatusBadRequest)
 		return
 	}
+	if companyID == "default" {
+		companyID = defaultCompanyID
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

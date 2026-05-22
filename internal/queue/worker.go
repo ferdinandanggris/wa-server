@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wa-server/internal/agent"
+	"github.com/wa-server/internal/api/webhook"
 	"github.com/wa-server/internal/metrics"
 	"github.com/wa-server/internal/models"
 	phonelib "github.com/wa-server/internal/phone"
@@ -56,6 +57,7 @@ type WorkerPool struct {
 	cancel          context.CancelFunc
 	metrics         *metrics.Metrics
 	agentTrackers   []*agent.Tracker
+	wsHub           *webhook.WebSocketHub
 }
 
 func NewWorkerPool(
@@ -68,6 +70,7 @@ func NewWorkerPool(
 	convRepo ConversationRepoForWorker,
 	phoneNumberRepo PhoneNumberRepoForWorker,
 	workers int,
+	wsHub *webhook.WebSocketHub,
 ) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
@@ -82,6 +85,7 @@ func NewWorkerPool(
 		workers:         workers,
 		ctx:             ctx,
 		cancel:          cancel,
+		wsHub:           wsHub,
 	}
 }
 
@@ -222,6 +226,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 	}
 
 	companyID := pn.CompanyID
+	slog.Info("resolved company_id for broadcast", "company_id", companyID, "conversation_id", message.ConversationID)
 
 	if wp.companyRepo != nil && companyID != "" {
 		ok, err := wp.companyRepo.TryIncrementQuota(ctx, companyID, 1)
@@ -267,6 +272,23 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 		if err := wp.msgRepo.UpdateWAMessageID(ctx, message.ID, waMessageID); err != nil {
 			slog.Error("failed to update WA message ID", "error", err, "message_id", message.ID)
 		}
+	}
+
+	if wp.wsHub != nil {
+		full, err := wp.msgRepo.GetByID(ctx, message.ID)
+		if err == nil {
+			full.Status = "sent"
+			full.MessageID = waMessageID
+			wp.wsHub.BroadcastToCompany(companyID, webhook.WebSocketMessage{
+				Type:    "MessageStatusUpdated",
+				Payload: full,
+			})
+			slog.Info("broadcast sent status via worker", "message_id", message.ID, "company_id", companyID)
+		} else {
+			slog.Error("failed to get message for broadcast", "error", err, "message_id", message.ID)
+		}
+	} else {
+		slog.Warn("wsHub is nil, skipping status broadcast", "message_id", message.ID)
 	}
 
 	if wp.billingRepo != nil {

@@ -271,3 +271,25 @@ Program.cs
 - **Phone number service** — `SyncFromMeta` now fetches and stores Business Profile per number
 - **Phone summary endpoint** — Returns `verified_name`, `is_active`, `about`, `profile_picture_url`
 - **ChatSidebar** — Active dot (green/gray) indicator with tooltip showing verified name
+
+## Session Summary — May 22 2026 (Part 2)
+
+### WebSocket Debugging & Status Progression Fixes
+- **WebSocket event types**: Changed `new_message` → `ReceiveMessage`, `message_status` → `MessageStatusUpdated` for frontend compatibility
+- **company_id mismatch**: FE connects with `"default"`, worker broadcasts with UUID. Mapped via `defaultCompanyID` in WS upgrade handler
+- **Typing indicator**: Fixed empty company_id — now resolves from conversation
+- **MessageStatusUpdated matching**: Added `payload.id` fallback in FE handler + `updateTempMessage` after `sendMessage` response
+- **last_message_preview**: Set in `processMessage` inbound handler and outbound handler; fixed `Update` method for null UUID (`assigned_agent_id`)
+- **UpdateConversation broadcast**: Added WebSocket broadcasts for both inbound and outbound messages
+- **Contact name check**: Preserve existing name when contact already exists (don't overwrite)
+- **Filter by phone_number_id**: Changed backend + frontend to filter by `phone_number_id` instead of phone number
+- **Worker sent broadcast**: Added `MessageStatusUpdated` broadcast after `UpdateWAMessageID` with debug logs
+- **Status progression**: Added `isValidStatusTransition` — enforces one-way: `pending→sent→delivered→read`, `sent→failed`, blocks backward transitions
+- **UpdateWAMessageID**: Added `AND status = 'pending'` to prevent overwriting delivered/read
+- **CRITICAL BUG — processStatus broadcast stale status**: Broadcast payload had OLD `msg.Status` because `msg` was loaded from DB before update. Fixed by setting `msg.Status` and timestamps after each switch case (sent/delivered/read/failed)
+
+### wa-chat FE Changes
+- Added `updateTempMessage` integration in `handleSend` flow (ChatLayout + useChatActions + useMessages)
+- Added `payload.id` matching in `MessageStatusUpdated` handler for temp→server ID transition
+- Refactored API `sendMessage` to return `message_id` (server UUID)
+- Filter conversations by `phone_number_id` in API calls
