@@ -1,0 +1,100 @@
+{
+  "title": "Webhook Monitoring",
+  "uid": "webhook-monitoring",
+  "tags": ["whatsapp", "webhook"],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "title": "Webhook Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [{
+        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"incoming webhook\" [1m])) or sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"HandleWebhook\" [1m]))",
+        "legendFormat": "webhooks/s"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "targets": [{
+        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"ERROR\" [1m]))",
+        "legendFormat": "errors/s"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Messages Sent / min",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "targets": [{
+        "expr": "sum(rate({container=\"wa-server-app\", job=\"wa-server\"} |= \"message sent successfully\" [1m]))",
+        "legendFormat": "sent/min"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cpm",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Recent Webhook Events",
+      "type": "logs",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
+      "targets": [{
+        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"webhook\"",
+        "refId": "A"
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "title": "Errors",
+      "type": "logs",
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 20 },
+      "targets": [{
+        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"ERROR\"",
+        "refId": "A"
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "title": "Message Status Updates",
+      "type": "logs",
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 20 },
+      "targets": [{
+        "expr": "{container=\"wa-server-app\", job=\"wa-server\"} |= \"updated message status\"",
+        "refId": "A"
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    }
+  ]
+}

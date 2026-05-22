@@ -73,8 +73,51 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      - "logging=promtail"
+      - "job=wa-server"
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: wa-server-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: wa-server-promtail
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wa-server-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   rabbitmq_data:
   redis_data:
+  loki_data:
+  grafana_data:

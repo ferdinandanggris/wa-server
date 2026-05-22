@@ -33,6 +33,7 @@ func main() {
 }
 
 func run() error {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	slog.Info("starting WhatsApp Gateway server...")
 
 	cfg, err := config.Load()
