@@ -307,7 +307,7 @@ func (h *ConversationHandler) renameConversation(w http.ResponseWriter, r *http.
 		return
 	}
 
-	conv.Status = req.Name
+	conv.Name = req.Name
 
 	if err := h.convRepo.Update(r.Context(), conv); err != nil {
 		slog.Error("failed to rename conversation", "error", err)
@@ -451,12 +451,12 @@ func (h *ConversationHandler) getConversationMessages(w http.ResponseWriter, r *
 			"context_message_id": m.ContextMessageID,
 		}
 		if m.ContextMessageID != "" {
-			content, dir, msgType, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
+			rc, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
 			if err != nil {
 				slog.Warn("getConversationMessages: GetReplyContext failed", "context_message_id", m.ContextMessageID, "error", err)
 			} else {
-				item["reply_text"] = replyDisplayText(content, msgType)
-				if dir == "inbound" {
+				item["reply_text"] = replyDisplayText(rc.Content, rc.Type)
+				if rc.Direction == "inbound" {
 					item["reply_name"] = "Customer"
 				} else {
 					item["reply_name"] = "CS Agent"

@@ -13,6 +13,7 @@ type Conversation struct {
 	PhoneNumber           string     `json:"phone_number,omitempty"`
 	PhoneNumberID         string     `json:"phone_number_id,omitempty"`
 	AssignedAgentID       string     `json:"assigned_agent_id,omitempty"`
+	Name                  string     `json:"name,omitempty"`
 	Status                string     `json:"status"`
 	LastCustomerMessageAt *time.Time `json:"last_customer_message_at,omitempty"`
 	LastAgentMessageAt    *time.Time `json:"last_agent_message_at,omitempty"`

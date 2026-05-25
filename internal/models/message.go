@@ -15,6 +15,7 @@ type Message struct {
 	Content          string     `json:"content,omitempty"`
 	TemplateID       string     `json:"template_id,omitempty"`
 	TemplateParams   string     `json:"template_params,omitempty"`
+	LanguageCode     string     `json:"language_code,omitempty"`
 	MediaURL         string     `json:"media_url,omitempty"`
 	Status           string     `json:"status"`
 	WAStatus         string     `json:"wa_status,omitempty"`
@@ -60,6 +61,12 @@ const (
 	MessageStatusFailed    MessageStatus = "failed"
 )
 
+type ReplyContext struct {
+	Content   string
+	Direction string
+	Type      string
+}
+
 // MessageRepository defines persistence operations for messages.
 type MessageRepository interface {
 	Create(ctx context.Context, msg *Message) error
@@ -67,7 +74,7 @@ type MessageRepository interface {
 	GetByMessageID(ctx context.Context, messageID string) (*Message, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (*Message, error)
 	GetByConversationID(ctx context.Context, convID string, limit, offset int) ([]Message, error)
-	GetReplyContext(ctx context.Context, id string) (content string, direction string, msgType string, err error)
+	GetReplyContext(ctx context.Context, id string) (*ReplyContext, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
 	UpdateDeliveryStatus(ctx context.Context, id, status string, timestamp time.Time) error
 	UpdateWAMessageID(ctx context.Context, id, waMessageID string) error

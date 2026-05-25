@@ -306,11 +306,11 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 			"created_at":         message.CreatedAt,
 		}
 		if message.ContextMessageID != "" {
-			content, dir, msgType, err := h.msgRepo.GetReplyContext(ctx, message.ContextMessageID)
+			rc, err := h.msgRepo.GetReplyContext(ctx, message.ContextMessageID)
 			if err == nil {
-				replyText := content
+				replyText := rc.Content
 				if replyText == "" {
-					switch msgType {
+					switch rc.Type {
 					case "image":
 						replyText = "🖼 Image"
 					case "video":
@@ -324,7 +324,7 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 					}
 				}
 				wsPayload["reply_text"] = replyText
-				if dir == "inbound" {
+				if rc.Direction == "inbound" {
 					wsPayload["reply_name"] = "Customer"
 				} else {
 					wsPayload["reply_name"] = "CS Agent"
@@ -472,6 +472,10 @@ func (h *WhatsAppHandler) processTemplateStatusUpdate(ctx context.Context, raw m
 }
 
 func (h *WhatsAppHandler) resolveCompanyID(ctx context.Context, phoneNumberID string) (string, error) {
+	pn, err := h.phoneNumberRepo.GetByMetaID(ctx, phoneNumberID)
+	if err == nil && pn.CompanyID != "" {
+		return pn.CompanyID, nil
+	}
 	return defaultCompanyID, nil
 }
 
@@ -530,6 +534,21 @@ func extractMessageContent(msg WhatsAppMessage) string {
 		if msg.Interactive.ListReply != nil {
 			return msg.Interactive.ListReply.Title
 		}
+	}
+	if msg.Image != nil {
+		return "🖼 Image"
+	}
+	if msg.Video != nil {
+		return "🎬 Video"
+	}
+	if msg.Document != nil {
+		return "📄 Document"
+	}
+	if msg.Audio != nil {
+		return "🎵 Audio"
+	}
+	if msg.Sticker != nil {
+		return "🎭 Sticker"
 	}
 	return ""
 }

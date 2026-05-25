@@ -18,8 +18,8 @@ import (
 type WhatsAppClient interface {
 	SendMessage(ctx context.Context, to, messageType, content, mediaURL, contextMsgID string) (string, error)
 	SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL, contextMsgID string) (string, error)
-	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
-	SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error)
+	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string, languageCode string) (string, error)
+	SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string, languageCode string) (string, error)
 	GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
 }
 
@@ -196,6 +196,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 		MediaURL         string `json:"media_url"`
 		TemplateID       string `json:"template_id"`
 		TemplateParams   string `json:"template_params"`
+		LanguageCode     string `json:"language_code"`
 		CompanyID        string `json:"company_id"`
 		ContextMessageID string `json:"context_message_id"`
 	}
@@ -260,7 +261,7 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 
 	if message.MessageType == "template" {
 		params := parseTemplateParams(message.TemplateParams)
-		waMessageID, sendErr = wp.whatsapp.SendTemplateMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.TemplateID, params)
+		waMessageID, sendErr = wp.whatsapp.SendTemplateMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.TemplateID, params, message.LanguageCode)
 	} else {
 		waMessageID, sendErr = wp.whatsapp.SendMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.MessageType, message.Content, message.MediaURL, contextWAID)
 	}

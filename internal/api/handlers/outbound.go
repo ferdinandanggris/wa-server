@@ -142,6 +142,7 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		MediaURL:         req.MediaURL,
 		TemplateID:       templateID,
 		TemplateParams:   paramsJSON,
+		LanguageCode:     req.LanguageCode,
 		Status:           string(models.MessageStatusPending),
 		ContextMessageID: contextMsgID,
 		IdempotencyKey:   req.IdempotencyKey,
@@ -263,13 +264,12 @@ func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("getmessages item", "id", m.ID, "context_msg_id", m.ContextMessageID, "has_context", m.ContextMessageID != "")
 		if m.ContextMessageID != "" {
-			content, dir, msgType, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
+			rc, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
 			if err != nil {
 				slog.Warn("GetReplyContext failed", "context_message_id", m.ContextMessageID, "error", err)
 			} else {
-				slog.Info("GetReplyContext success", "content", content, "dir", dir, "msgType", msgType)
-				item["reply_text"] = replyDisplayText(content, msgType)
-				if dir == "inbound" {
+				item["reply_text"] = replyDisplayText(rc.Content, rc.Type)
+				if rc.Direction == "inbound" {
 					item["reply_name"] = "Customer"
 				} else {
 					item["reply_name"] = "CS Agent"

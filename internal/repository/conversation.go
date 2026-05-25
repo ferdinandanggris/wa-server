@@ -87,10 +87,10 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 
 	query := `
 		INSERT INTO conversations (
-			id, company_id, contact_id, assigned_agent_id, status,
+			id, company_id, contact_id, assigned_agent_id, status, name,
 			last_customer_message_at, last_agent_message_at, is_24h_window_active,
 			unread_count, last_message_preview, phone_number, phone_number_id, started_at, closed_at, created_at, updated_at
-		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, $13, $14, $15, $16)
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::uuid, $14, $15, $16, $17)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -99,6 +99,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 		contactID,
 		assignedAgentID,
 		conv.Status,
+		conv.Name,
 		conv.LastCustomerMessageAt,
 		conv.LastAgentMessageAt,
 		conv.Is24hWindowActive,
@@ -116,7 +117,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *models.Conver
 }
 
 var conversationCols = `id, COALESCE(company_id::text, ''), contact_id, COALESCE(assigned_agent_id::text, ''), status,
-	last_customer_message_at, last_agent_message_at, is_24h_window_active,
+	COALESCE(name, ''), last_customer_message_at, last_agent_message_at, is_24h_window_active,
 	unread_count, COALESCE(last_message_preview, ''), COALESCE(phone_number, ''), COALESCE(phone_number_id::text, ''),
 	started_at, closed_at, created_at, updated_at`
 
@@ -124,7 +125,7 @@ func scanConversation(scanner interface{ Scan(dest ...interface{}) error }) (mod
 	var conv models.Conversation
 	err := scanner.Scan(
 		&conv.ID, &conv.CompanyID, &conv.ContactID, &conv.AssignedAgentID, &conv.Status,
-		&conv.LastCustomerMessageAt, &conv.LastAgentMessageAt, &conv.Is24hWindowActive,
+		&conv.Name, &conv.LastCustomerMessageAt, &conv.LastAgentMessageAt, &conv.Is24hWindowActive,
 		&conv.UnreadCount, &conv.LastMessagePreview, &conv.PhoneNumber, &conv.PhoneNumberID,
 		&conv.StartedAt, &conv.ClosedAt, &conv.CreatedAt, &conv.UpdatedAt,
 	)
@@ -177,9 +178,9 @@ func (r *ConversationRepository) Update(ctx context.Context, conv *models.Conver
 
 	query := `
 		UPDATE conversations
-		SET assigned_agent_id = $2, status = $3, last_customer_message_at = $4,
-			last_agent_message_at = $5, is_24h_window_active = $6, unread_count = $7,
-			last_message_preview = $8, closed_at = $9, updated_at = $10
+		SET assigned_agent_id = $2, status = $3, name = $4, last_customer_message_at = $5,
+			last_agent_message_at = $6, is_24h_window_active = $7, unread_count = $8,
+			last_message_preview = $9, closed_at = $10, updated_at = $11
 		WHERE id = $1
 	`
 
@@ -187,6 +188,7 @@ func (r *ConversationRepository) Update(ctx context.Context, conv *models.Conver
 		conv.ID,
 		assignedAgentID,
 		conv.Status,
+		conv.Name,
 		conv.LastCustomerMessageAt,
 		conv.LastAgentMessageAt,
 		conv.Is24hWindowActive,
@@ -308,7 +310,7 @@ func (r *ConversationRepository) ListByAgent(ctx context.Context, agentID string
 
 const conversationSelectWithJoin = `
 	SELECT c.id, COALESCE(c.company_id::text, ''), COALESCE(c.contact_id::text, ''), COALESCE(c.assigned_agent_id::text, ''), c.status,
-		c.last_customer_message_at, c.last_agent_message_at, c.is_24h_window_active,
+		COALESCE(c.name, ''), c.last_customer_message_at, c.last_agent_message_at, c.is_24h_window_active,
 		c.unread_count, COALESCE(c.last_message_preview, ''), COALESCE(c.phone_number, ''), COALESCE(c.phone_number_id::text, ''), c.started_at, c.closed_at, c.created_at, c.updated_at,
 		COALESCE(ct.wa_id, ''), COALESCE(ct.name, ''), COALESCE(ct.phone_number, ''),
 		COALESCE(pn.id::text, ''), COALESCE(pn.phone_number_id::text, ''), COALESCE(pn.verified_name, '')
@@ -320,7 +322,7 @@ func scanConversationRow(scanner interface{ Scan(dest ...interface{}) error }) (
 	var row ConversationRow
 	err := scanner.Scan(
 		&row.ID, &row.CompanyID, &row.ContactID, &row.AssignedAgentID, &row.Status,
-		&row.LastCustomerMessageAt, &row.LastAgentMessageAt, &row.Is24hWindowActive,
+		&row.Name, &row.LastCustomerMessageAt, &row.LastAgentMessageAt, &row.Is24hWindowActive,
 		&row.UnreadCount, &row.LastMessagePreview, &row.PhoneNumber, &row.PhoneNumberID,
 		&row.StartedAt, &row.ClosedAt, &row.CreatedAt, &row.UpdatedAt,
 		&row.CustomerWAID, &row.CustomerName, &row.ContactPhone,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/wa-server/internal/models"
@@ -373,28 +374,28 @@ func (c *Client) SendMessage(ctx context.Context, to, messageType, content, medi
 	case "image":
 		payload = map[string]interface{}{
 			"messaging_product": "whatsapp",
-			"to":                NormalizePhoneNumber(to),
+			"to":                to,
 			"type":              "image",
 			"image":             map[string]string{"link": mediaURL},
 		}
 	case "video":
 		payload = map[string]interface{}{
 			"messaging_product": "whatsapp",
-			"to":                NormalizePhoneNumber(to),
+			"to":                to,
 			"type":              "video",
 			"video":             map[string]string{"link": mediaURL},
 		}
 	case "document":
 		payload = map[string]interface{}{
 			"messaging_product": "whatsapp",
-			"to":                NormalizePhoneNumber(to),
+			"to":                to,
 			"type":              "document",
 			"document":          map[string]string{"link": mediaURL},
 		}
 	default:
 		payload = map[string]interface{}{
 			"messaging_product": "whatsapp",
-			"to":                NormalizePhoneNumber(to),
+			"to":                to,
 			"type":              "text",
 			"text":              map[string]string{"body": content},
 		}
@@ -447,44 +448,60 @@ func (c *Client) SendMessage(ctx context.Context, to, messageType, content, medi
 	return result.Messages[0].ID, nil
 }
 
-func (c *Client) SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error) {
+func (c *Client) SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string, languageCode string) (string, error) {
 	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", c.APIVersion, phoneNumberID)
 
-	result, err := c.sendTemplate(ctx, endpoint, to, templateID, params)
+	result, err := c.sendTemplate(ctx, endpoint, to, templateID, params, languageCode)
 	if err != nil {
 		return "", err
 	}
 	return result.Messages[0].ID, nil
 }
 
-func (c *Client) SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error) {
+func (c *Client) SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string, languageCode string) (string, error) {
 	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", c.APIVersion, c.PhoneNumberID)
 
-	result, err := c.sendTemplate(ctx, endpoint, to, templateID, params)
+	result, err := c.sendTemplate(ctx, endpoint, to, templateID, params, languageCode)
 	if err != nil {
 		return "", err
 	}
 	return result.Messages[0].ID, nil
 }
 
-func (c *Client) sendTemplate(ctx context.Context, endpoint, to, templateID string, params map[string]string) (*WhatsAppResponse, error) {
-	components := make([]map[string]interface{}, 0)
-	for key, value := range params {
+func (c *Client) sendTemplate(ctx context.Context, endpoint, to, templateID string, params map[string]string, languageCode string) (*WhatsAppResponse, error) {
+	lang := languageCode
+	if lang == "" {
+		lang = "en_US"
+	}
+
+	var components []map[string]interface{}
+	if len(params) > 0 {
+		keys := make([]string, 0, len(params))
+		for k := range params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		parameters := make([]map[string]string, 0, len(params))
+		for _, k := range keys {
+			parameters = append(parameters, map[string]string{
+				"type": "text",
+				"text": params[k],
+			})
+		}
 		components = append(components, map[string]interface{}{
-			"type": "body",
-			"parameters": []map[string]string{
-				{"type": "text", "parameter": key, "value": value},
-			},
+			"type":       "body",
+			"parameters": parameters,
 		})
 	}
 
 	payload := map[string]interface{}{
 		"messaging_product": "whatsapp",
-		"to":                NormalizePhoneNumber(to),
+		"to":                to,
 		"type":              "template",
 		"template": map[string]interface{}{
 			"name":       templateID,
-			"language":   map[string]string{"code": "en_US"},
+			"language":   map[string]string{"code": lang},
 			"components": components,
 		},
 	}
