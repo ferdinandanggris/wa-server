@@ -417,24 +417,64 @@ func (h *ConversationHandler) getConversationMessages(w http.ResponseWriter, r *
 			offset = cid
 		}
 	}
-	messages, err := h.msgRepo.GetByConversationID(r.Context(), conversationID, limit, offset)
+	dbMessages, err := h.msgRepo.GetByConversationID(r.Context(), conversationID, limit, offset)
 	if err != nil {
 		slog.Error("failed to get messages", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to get messages"})
 		return
 	}
-	if messages == nil {
-		messages = []models.Message{}
+	if dbMessages == nil {
+		dbMessages = []models.Message{}
 	}
-	hasMore := len(messages) >= limit
-	nextCursorID := offset + len(messages)
+
+	items := make([]map[string]interface{}, len(dbMessages))
+	for i, m := range dbMessages {
+		item := map[string]interface{}{
+			"id":                 m.ID,
+			"conversation_id":    m.ConversationID,
+			"message_id":         m.MessageID,
+			"direction":          m.Direction,
+			"message_type":       m.MessageType,
+			"content":            m.Content,
+			"template_id":        m.TemplateID,
+			"template_params":    m.TemplateParams,
+			"media_url":          m.MediaURL,
+			"status":             m.Status,
+			"wa_status":          m.WAStatus,
+			"message_timestamp":  m.MessageTimestamp,
+			"sent_at":            m.SentAt,
+			"delivered_at":       m.DeliveredAt,
+			"read_at":            m.ReadAt,
+			"error_message":      m.ErrorMessage,
+			"created_at":         m.CreatedAt,
+			"idempotency_key":    m.IdempotencyKey,
+			"context_message_id": m.ContextMessageID,
+		}
+		if m.ContextMessageID != "" {
+			content, dir, msgType, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
+			if err != nil {
+				slog.Warn("getConversationMessages: GetReplyContext failed", "context_message_id", m.ContextMessageID, "error", err)
+			} else {
+				item["reply_text"] = replyDisplayText(content, msgType)
+				if dir == "inbound" {
+					item["reply_name"] = "Customer"
+				} else {
+					item["reply_name"] = "CS Agent"
+				}
+			}
+		}
+		items[i] = item
+	}
+
+	hasMore := len(dbMessages) >= limit
+	nextCursorID := offset + len(dbMessages)
 	nextCursorUpdatedAt := ""
-	if hasMore && len(messages) > 0 {
-		nextCursorUpdatedAt = messages[len(messages)-1].CreatedAt.Format(time.RFC3339)
+	if hasMore && len(dbMessages) > 0 {
+		nextCursorUpdatedAt = dbMessages[len(dbMessages)-1].CreatedAt.Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "data": map[string]interface{}{
-			"items":                  messages,
+			"items":                  items,
 			"limit":                  limit,
 			"has_more":               hasMore,
 			"next_cursor_id":         nextCursorID,

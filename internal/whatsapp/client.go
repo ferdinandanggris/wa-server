@@ -270,7 +270,7 @@ func (c *Client) UpdateBusinessProfile(ctx context.Context, phoneNumberID string
 	return nil
 }
 
-func (c *Client) SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL string) (string, error) {
+func (c *Client) SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL, contextMsgID string) (string, error) {
 	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", c.APIVersion, phoneNumberID)
 
 	var payload map[string]interface{}
@@ -311,6 +311,12 @@ func (c *Client) SendMessageFromPhone(ctx context.Context, phoneNumberID, to, me
 			"text": map[string]string{
 				"body": content,
 			},
+		}
+	}
+
+	if contextMsgID != "" {
+		payload["context"] = map[string]string{
+			"message_id": contextMsgID,
 		}
 	}
 
@@ -358,7 +364,7 @@ func (c *Client) SendMessageFromPhone(ctx context.Context, phoneNumberID, to, me
 	return waResp.Messages[0].ID, nil
 }
 
-func (c *Client) SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error) {
+func (c *Client) SendMessage(ctx context.Context, to, messageType, content, mediaURL, contextMsgID string) (string, error) {
 	endpoint := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", c.APIVersion, c.PhoneNumberID)
 
 	var payload map[string]interface{}
@@ -391,6 +397,12 @@ func (c *Client) SendMessage(ctx context.Context, to, messageType, content, medi
 			"to":                NormalizePhoneNumber(to),
 			"type":              "text",
 			"text":              map[string]string{"body": content},
+		}
+	}
+
+	if contextMsgID != "" {
+		payload["context"] = map[string]string{
+			"message_id": contextMsgID,
 		}
 	}
 

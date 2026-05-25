@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -248,6 +249,21 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 		CreatedAt:      time.Now().UTC(),
 	}
 
+	if ts, err := strconv.ParseInt(msg.Timestamp, 10, 64); err == nil {
+		message.MessageTimestamp = ts
+	}
+
+	if msg.Context != nil && msg.Context.MessageID != "" {
+		slog.Info("inbound message has context", "context_message_id", msg.Context.MessageID)
+		existingCtx, err := h.msgRepo.GetByMessageID(ctx, msg.Context.MessageID)
+		if err == nil && existingCtx != nil {
+			message.ContextMessageID = existingCtx.ID
+			slog.Info("resolved inbound context", "local_message_id", existingCtx.ID)
+		} else {
+			slog.Warn("failed to resolve inbound context", "context_message_id", msg.Context.MessageID, "error", err)
+		}
+	}
+
 	if msg.Image != nil {
 		message.MediaURL = msg.Image.URL
 	}
@@ -276,9 +292,48 @@ func (h *WhatsAppHandler) processMessage(ctx context.Context, metadata *WhatsApp
 	}
 
 	if h.wsHub != nil {
+		wsPayload := map[string]interface{}{
+			"id":                 message.ID,
+			"conversation_id":    message.ConversationID,
+			"message_id":         message.MessageID,
+			"direction":          message.Direction,
+			"message_type":       message.MessageType,
+			"content":            message.Content,
+			"media_url":          message.MediaURL,
+			"status":             message.Status,
+			"message_timestamp":  message.MessageTimestamp,
+			"context_message_id": message.ContextMessageID,
+			"created_at":         message.CreatedAt,
+		}
+		if message.ContextMessageID != "" {
+			content, dir, msgType, err := h.msgRepo.GetReplyContext(ctx, message.ContextMessageID)
+			if err == nil {
+				replyText := content
+				if replyText == "" {
+					switch msgType {
+					case "image":
+						replyText = "🖼 Image"
+					case "video":
+						replyText = "🎬 Video"
+					case "document":
+						replyText = "📄 Document"
+					case "audio":
+						replyText = "🎵 Audio"
+					default:
+						replyText = "Media"
+					}
+				}
+				wsPayload["reply_text"] = replyText
+				if dir == "inbound" {
+					wsPayload["reply_name"] = "Customer"
+				} else {
+					wsPayload["reply_name"] = "CS Agent"
+				}
+			}
+		}
 		h.wsHub.BroadcastToCompany(companyID, WebSocketMessage{
 			Type:    "ReceiveMessage",
-			Payload: message,
+			Payload: wsPayload,
 		})
 		h.wsHub.BroadcastToCompany(companyID, WebSocketMessage{
 			Type:    "UpdateConversation",
@@ -598,7 +653,8 @@ type WhatsAppListReply struct {
 }
 
 type WhatsAppContext struct {
-	MessageID string `json:"message_id"`
+	From      string `json:"from"`
+	MessageID string `json:"id"`
 }
 
 type WhatsAppStatus struct {

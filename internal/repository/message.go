@@ -59,9 +59,20 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		INSERT INTO messages (
 			id, conversation_id, message_id, direction, message_type,
 			content, template_id, template_params, media_url, status,
-			wa_status, sent_at, delivered_at, read_at, error_message, created_at, idempotency_key
-		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			wa_status, message_timestamp, sent_at, delivered_at, read_at, error_message, created_at,
+			idempotency_key, context_message_id
+		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::uuid)
 	`
+
+	var contextMsgID interface{}
+	if msg.ContextMessageID != "" {
+		contextMsgID = msg.ContextMessageID
+	}
+
+	var messageTimestamp interface{}
+	if msg.MessageTimestamp != 0 {
+		messageTimestamp = msg.MessageTimestamp
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		msg.ID,
@@ -75,12 +86,14 @@ func (r *MessageRepository) Create(ctx context.Context, msg *models.Message) err
 		msg.MediaURL,
 		msg.Status,
 		msg.WAStatus,
+		messageTimestamp,
 		msg.SentAt,
 		msg.DeliveredAt,
 		msg.ReadAt,
 		msg.ErrorMessage,
 		msg.CreatedAt,
 		idempotencyKey,
+		contextMsgID,
 	)
 
 	if err != nil {
@@ -104,12 +117,14 @@ func scanMessage(row interface{ Scan(dest ...any) error }) (*models.Message, err
 		&msg.MediaURL,
 		&msg.Status,
 		&msg.WAStatus,
+		&msg.MessageTimestamp,
 		&msg.SentAt,
 		&msg.DeliveredAt,
 		&msg.ReadAt,
 		&msg.ErrorMessage,
 		&msg.CreatedAt,
 		&msg.IdempotencyKey,
+		&msg.ContextMessageID,
 	)
 	if err != nil {
 		return nil, err
@@ -122,8 +137,8 @@ func (r *MessageRepository) GetByID(ctx context.Context, id string) (*models.Mes
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
-			COALESCE(idempotency_key, '')
+			COALESCE(message_timestamp, 0), sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, ''), COALESCE(context_message_id::TEXT, '')
 		FROM messages WHERE id = $1
 	`
 
@@ -135,8 +150,8 @@ func (r *MessageRepository) GetByMessageID(ctx context.Context, messageID string
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
-			COALESCE(idempotency_key, '')
+			COALESCE(message_timestamp, 0), sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, ''), COALESCE(context_message_id::TEXT, '')
 		FROM messages WHERE message_id = $1
 	`
 
@@ -148,8 +163,8 @@ func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, key string)
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
-			COALESCE(idempotency_key, '')
+			COALESCE(message_timestamp, 0), sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, ''), COALESCE(context_message_id::TEXT, '')
 		FROM messages WHERE idempotency_key = $1
 	`
 
@@ -161,11 +176,11 @@ func (r *MessageRepository) GetByConversationID(ctx context.Context, convID stri
 		SELECT id, conversation_id, message_id, direction, message_type,
 			COALESCE(content, ''), COALESCE(template_id::TEXT, ''), COALESCE(template_params::TEXT, ''),
 			COALESCE(media_url, ''), status, COALESCE(wa_status, ''),
-			sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
-			COALESCE(idempotency_key, '')
+			COALESCE(message_timestamp, 0), sent_at, delivered_at, read_at, COALESCE(error_message, ''), created_at,
+			COALESCE(idempotency_key, ''), COALESCE(context_message_id::TEXT, '')
 		FROM messages
 		WHERE conversation_id = $1
-		ORDER BY created_at ASC
+		ORDER BY COALESCE(NULLIF(message_timestamp, 0), EXTRACT(EPOCH FROM created_at)::BIGINT) DESC
 		LIMIT $2 OFFSET $3
 	`
 
@@ -185,6 +200,12 @@ func (r *MessageRepository) GetByConversationID(ctx context.Context, convID stri
 	}
 
 	return messages, rows.Err()
+}
+
+func (r *MessageRepository) GetReplyContext(ctx context.Context, id string) (content string, direction string, msgType string, err error) {
+	query := `SELECT COALESCE(content, ''), direction, COALESCE(message_type, '') FROM messages WHERE id = $1`
+	err = r.db.QueryRowContext(ctx, query, id).Scan(&content, &direction, &msgType)
+	return
 }
 
 func (r *MessageRepository) UpdateStatus(ctx context.Context, id, status string) error {

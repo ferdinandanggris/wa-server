@@ -16,8 +16,8 @@ import (
 )
 
 type WhatsAppClient interface {
-	SendMessage(ctx context.Context, to, messageType, content, mediaURL string) (string, error)
-	SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL string) (string, error)
+	SendMessage(ctx context.Context, to, messageType, content, mediaURL, contextMsgID string) (string, error)
+	SendMessageFromPhone(ctx context.Context, phoneNumberID, to, messageType, content, mediaURL, contextMsgID string) (string, error)
 	SendTemplateMessage(ctx context.Context, to, templateID string, params map[string]string) (string, error)
 	SendTemplateMessageFromPhone(ctx context.Context, phoneNumberID, to, templateID string, params map[string]string) (string, error)
 	GetPhoneNumbers(ctx context.Context) ([]models.WhatsAppPhoneNumber, error)
@@ -189,14 +189,15 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 	slog.Info("worker received message", "body_length", len(body))
 
 	var message struct {
-		ID             string `json:"id"`
-		ConversationID string `json:"conversation_id"`
-		MessageType    string `json:"message_type"`
-		Content        string `json:"content"`
-		MediaURL       string `json:"media_url"`
-		TemplateID     string `json:"template_id"`
-		TemplateParams string `json:"template_params"`
-		CompanyID      string `json:"company_id"`
+		ID               string `json:"id"`
+		ConversationID   string `json:"conversation_id"`
+		MessageType      string `json:"message_type"`
+		Content          string `json:"content"`
+		MediaURL         string `json:"media_url"`
+		TemplateID       string `json:"template_id"`
+		TemplateParams   string `json:"template_params"`
+		CompanyID        string `json:"company_id"`
+		ContextMessageID string `json:"context_message_id"`
 	}
 
 	if err := json.Unmarshal(body, &message); err != nil {
@@ -247,11 +248,21 @@ func (wp *WorkerPool) processMessage(ctx context.Context, body []byte, workerID 
 	var waMessageID string
 	var sendErr error
 
+	contextWAID := ""
+	if message.ContextMessageID != "" {
+		if ctxMsg, err := wp.msgRepo.GetByID(ctx, message.ContextMessageID); err == nil {
+			contextWAID = ctxMsg.MessageID
+			slog.Info("resolved context message", "context_message_id", message.ContextMessageID, "context_wa_id", contextWAID)
+		} else {
+			slog.Warn("failed to resolve context message", "context_message_id", message.ContextMessageID, "error", err)
+		}
+	}
+
 	if message.MessageType == "template" {
 		params := parseTemplateParams(message.TemplateParams)
 		waMessageID, sendErr = wp.whatsapp.SendTemplateMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.TemplateID, params)
 	} else {
-		waMessageID, sendErr = wp.whatsapp.SendMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.MessageType, message.Content, message.MediaURL)
+		waMessageID, sendErr = wp.whatsapp.SendMessageFromPhone(ctx, pn.PhoneNumberID, phone, message.MessageType, message.Content, message.MediaURL, contextWAID)
 	}
 
 	if sendErr != nil {

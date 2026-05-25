@@ -97,7 +97,7 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationID := req.ConversationID
-	slog.Info("send message request", "conversation_id", conversationID, "message_type", req.MessageType)
+	slog.Info("send message request", "conversation_id", conversationID, "message_type", req.MessageType, "context_message_id", req.ContextMsgID)
 
 	if conversationID == "" {
 		slog.Warn("conversation_id not provided, need to implement contact/conversation lookup")
@@ -108,6 +108,17 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 	if messageType == "reaction" && req.ReactionEmoji != "" {
 		content = req.ReactionEmoji
+	}
+
+	contextMsgID := req.ContextMsgID
+	if contextMsgID != "" {
+		existing, err := h.msgRepo.GetByID(r.Context(), contextMsgID)
+		if err != nil {
+			existing, err = h.msgRepo.GetByMessageID(r.Context(), contextMsgID)
+		}
+		if err == nil {
+			contextMsgID = existing.ID
+		}
 	}
 
 	paramsJSON := ""
@@ -123,17 +134,18 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := &models.Message{
-		ID:             "",
-		ConversationID: conversationID,
-		Direction:      string(models.MessageDirectionOutbound),
-		MessageType:    messageType,
-		Content:        content,
-		MediaURL:       req.MediaURL,
-		TemplateID:     templateID,
-		TemplateParams: paramsJSON,
-		Status:         string(models.MessageStatusPending),
-		IdempotencyKey: req.IdempotencyKey,
-		CreatedAt:      time.Now().UTC(),
+		ID:               "",
+		ConversationID:   conversationID,
+		Direction:        string(models.MessageDirectionOutbound),
+		MessageType:      messageType,
+		Content:          content,
+		MediaURL:         req.MediaURL,
+		TemplateID:       templateID,
+		TemplateParams:   paramsJSON,
+		Status:           string(models.MessageStatusPending),
+		ContextMessageID: contextMsgID,
+		IdempotencyKey:   req.IdempotencyKey,
+		CreatedAt:        time.Now().UTC(),
 	}
 
 	if err := h.msgRepo.Create(r.Context(), msg); err != nil {
@@ -152,27 +164,26 @@ func (h *OutboundHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			preview = content
 		}
 	}
-	if conv, err := h.convRepo.GetByID(r.Context(), conversationID); err == nil {
-		conv.LastMessagePreview = preview
-		conv.UpdatedAt = time.Now().UTC()
-		if err := h.convRepo.Update(r.Context(), conv); err != nil {
-			slog.Error("failed to update conversation preview", "error", err)
+		if conv, err := h.convRepo.GetByID(r.Context(), conversationID); err == nil {
+			conv.LastMessagePreview = preview
+			conv.UpdatedAt = time.Now().UTC()
+			if err := h.convRepo.Update(r.Context(), conv); err != nil {
+				slog.Error("failed to update conversation preview", "error", err)
+			}
+			if h.wsHub != nil {
+				h.wsHub.BroadcastToCompany(conv.CompanyID, webhook.WebSocketMessage{
+					Type: "UpdateConversation",
+					Payload: map[string]interface{}{
+						"id":                  conv.ID,
+						"last_message_preview": preview,
+						"unread_count":        conv.UnreadCount,
+						"status":              conv.Status,
+						"updated_at":          time.Now().UTC(),
+					},
+				})
+			}
 		}
-		if h.wsHub != nil {
-			h.wsHub.BroadcastToCompany(conv.CompanyID, webhook.WebSocketMessage{
-				Type: "UpdateConversation",
-				Payload: map[string]interface{}{
-					"id":                  conv.ID,
-					"last_message_preview": preview,
-					"unread_count":        conv.UnreadCount,
-					"status":              conv.Status,
-					"updated_at":          time.Now().UTC(),
-				},
-			})
-		}
-	}
-
-	if h.queuePub != nil {
+		if h.queuePub != nil {
 		slog.Info("publishing message to queue", "message_id", msg.ID)
 		if err := h.queuePub.PublishOutbound(r.Context(), msg); err != nil {
 			slog.Error("failed to publish message to queue", "error", err)
@@ -228,6 +239,46 @@ func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
+	items := make([]map[string]interface{}, len(messages))
+	for i, m := range messages {
+		item := map[string]interface{}{
+			"id":                 m.ID,
+			"conversation_id":    m.ConversationID,
+			"message_id":         m.MessageID,
+			"direction":          m.Direction,
+			"message_type":       m.MessageType,
+			"content":            m.Content,
+			"template_id":        m.TemplateID,
+			"template_params":    m.TemplateParams,
+			"media_url":          m.MediaURL,
+			"status":             m.Status,
+			"wa_status":          m.WAStatus,
+			"sent_at":            m.SentAt,
+			"delivered_at":       m.DeliveredAt,
+			"read_at":            m.ReadAt,
+			"error_message":      m.ErrorMessage,
+			"created_at":         m.CreatedAt,
+			"idempotency_key":    m.IdempotencyKey,
+			"context_message_id": m.ContextMessageID,
+		}
+		slog.Info("getmessages item", "id", m.ID, "context_msg_id", m.ContextMessageID, "has_context", m.ContextMessageID != "")
+		if m.ContextMessageID != "" {
+			content, dir, msgType, err := h.msgRepo.GetReplyContext(r.Context(), m.ContextMessageID)
+			if err != nil {
+				slog.Warn("GetReplyContext failed", "context_message_id", m.ContextMessageID, "error", err)
+			} else {
+				slog.Info("GetReplyContext success", "content", content, "dir", dir, "msgType", msgType)
+				item["reply_text"] = replyDisplayText(content, msgType)
+				if dir == "inbound" {
+					item["reply_name"] = "Customer"
+				} else {
+					item["reply_name"] = "CS Agent"
+				}
+			}
+		}
+		items[i] = item
+	}
+
 	hasMore := len(messages) >= limit
 	nextCursorID := offset + len(messages)
 	nextCursorUpdatedAt := ""
@@ -237,10 +288,10 @@ func (h *OutboundHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "data": map[string]interface{}{
-			"items":                messages,
-			"limit":                limit,
-			"has_more":             hasMore,
-			"next_cursor_id":       nextCursorID,
+			"items":                  items,
+			"limit":                  limit,
+			"has_more":               hasMore,
+			"next_cursor_id":         nextCursorID,
 			"next_cursor_updated_at": nextCursorUpdatedAt,
 		},
 	})
@@ -256,4 +307,26 @@ func (h *OutboundHandler) RegisterRoutes(mux *http.ServeMux) {
 		}
 	})
 
+}
+
+func replyDisplayText(content, msgType string) string {
+	if content != "" {
+		return content
+	}
+	switch msgType {
+	case "image":
+		return "🖼 Image"
+	case "video":
+		return "🎬 Video"
+	case "document":
+		return "📄 Document"
+	case "audio":
+		return "🎵 Audio"
+	case "sticker":
+		return "🎭 Sticker"
+	case "template":
+		return "🔷 Template"
+	default:
+		return "Media"
+	}
 }
